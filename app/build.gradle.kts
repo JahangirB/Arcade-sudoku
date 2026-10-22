@@ -51,7 +51,7 @@ android {
         // Where the in-app updater looks for new releases (the README download button's release).
         buildConfigField(
             "String", "UPDATE_BASE_URL",
-            "\"https://github.com/JahangirB/Arcade-sudoku/releases/latest/download\"",
+            "\"https://github.com/JahangirB/Game-Suite/releases/latest/download\"",
         )
     }
 

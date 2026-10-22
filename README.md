@@ -1,7 +1,7 @@
 # Game Suite
 
 <p align="center">
-  <a href="https://github.com/JahangirB/Arcade-sudoku/releases/latest/download/GameSuite.apk">
+  <a href="https://github.com/JahangirB/Game-Suite/releases/latest/download/GameSuite.apk">
     <img alt="Download the Android app" src="https://img.shields.io/badge/%E2%AC%87%20Download-Android%20APK-0072E3?style=for-the-badge&logo=android&logoColor=white">
   </a>
 </p>
@@ -133,7 +133,7 @@ day, it doesn't bill you). For the one-click option also a free GitHub account.
 
 **Option A: deploy button.**
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/JahangirB/Arcade-sudoku/tree/ccr-d293cbfe-amy86v/backend/cloudflare)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/JahangirB/Game-Suite/tree/ccr-d293cbfe-amy86v/backend/cloudflare)
 
 1. Sign up at Cloudflare and confirm your email. The first time, Cloudflare asks you to
    pick a `workers.dev` subdomain (for example `jahangir`).
