@@ -154,7 +154,7 @@ npx wrangler deploy    # prints your server link
 
 **If the Cloudflare build fails** with *"Could not detect a directory containing static
 files"*, the build ran from an old copy of the code without the root `wrangler.jsonc`.
-Pull the latest code into your copy (on GitHub, **Sync fork**) and press **Retry build** in
+Connect the Worker to this repository (see *Updating the server* below) and press **Retry build** in
 *Workers & Pages → arcade-sudoku → Deployments*. Both the repository root and
 `backend/cloudflare` can be deployed. If the log says the Worker name doesn't match, name
 the Worker `arcade-sudoku` or change `name` in `wrangler.jsonc` to your Worker's name.
@@ -170,9 +170,13 @@ battle as usual. **Share link + code** puts the link, password and code in one m
 and the guest's **Paste invite** fills in all three. Anyone who sees that message can
 also open rooms on your server, so send the password separately if that matters to you.
 
-**Updating the server:** with the button, open your copy on GitHub and press **Sync
-fork** (Cloudflare redeploys by itself); with the command line, download the new code and
-run `npx wrangler deploy` again.
+**Updating the server:** the deploy button makes a separate *copy* of the code in your
+GitHub, which never receives updates. To get updates automatically, connect the Worker to
+this repository instead: *Workers & Pages → your Worker → Settings → Builds*, disconnect the
+copy, connect `JahangirB/Game-Suite` with the default branch, root directory `/` and deploy
+command `npx wrangler deploy`. Every push then redeploys the server. The `name` in
+`wrangler.jsonc` must match your Worker's name (here `arcade-sudoku1`). With the command
+line, download the new code and run `npx wrangler deploy` again.
 
 **Free limits** (check Cloudflare's pricing page, they change): around 100,000 requests a
 day; a battle is a few hundred small messages, so thousands of matches a day fit.

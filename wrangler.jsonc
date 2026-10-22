@@ -3,7 +3,7 @@
 // backend/cloudflare/wrangler.jsonc; a test checks that the two stay in sync.
 {
   "$schema": "backend/cloudflare/node_modules/wrangler/config-schema.json",
-  "name": "arcade-sudoku",
+  "name": "arcade-sudoku1",
   "main": "backend/cloudflare/src/index.js",
   "compatibility_date": "2025-09-01",
   "durable_objects": {
