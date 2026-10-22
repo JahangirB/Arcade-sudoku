@@ -38,14 +38,20 @@ object WordList {
     @Volatile private var answers: List<String> = emptyList()
     @Volatile private var allowed: Set<String> = emptySet()
 
+    /** Draw & Guess: things easy to draw (words/draw.txt). */
+    @Volatile var drawWords: List<String> = emptyList()
+        private set
+
     fun load(context: Context) {
         if (answers.isNotEmpty()) return
         fun read(name: String) = context.assets.open("words/$name.txt").bufferedReader().readLines().filter { it.length == Words.LENGTH }
         install(read("answers"), read("allowed"))
+        drawWords = context.assets.open("words/draw.txt").bufferedReader().readLines().filter { it.isNotBlank() }
     }
 
     /** For tests, and [load]. */
-    fun install(answers: List<String>, allowed: List<String>) {
+    fun install(answers: List<String>, allowed: List<String>, draw: List<String> = drawWords) {
+        drawWords = draw
         this.allowed = (allowed + answers).toSet()
         this.answers = answers
     }

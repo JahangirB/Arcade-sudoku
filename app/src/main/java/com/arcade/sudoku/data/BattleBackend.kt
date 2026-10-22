@@ -36,8 +36,14 @@ interface BattleBackend {
     /** Turn games: play [move] ({"col": n} in Connect Four). Readiness goes through [ready]. */
     suspend fun move(code: String, playerId: String, move: JSONObject): JSONObject
 
-    /** Word Race: guess [word]. Readiness goes through [ready]. */
+    /** Word Race and Draw & Guess: guess [word]. Readiness goes through [ready]. */
     suspend fun guess(code: String, playerId: String, word: String): JSONObject
+
+    /** Draw & Guess: add a stroke. The reply is only an acknowledgement, not a room state. */
+    suspend fun stroke(code: String, playerId: String, stroke: JSONObject): JSONObject
+
+    /** Draw & Guess: wipe the drawing. */
+    suspend fun clearDrawing(code: String, playerId: String): JSONObject
     suspend fun leave(code: String, playerId: String)
 
     /** Drops any live connection. */

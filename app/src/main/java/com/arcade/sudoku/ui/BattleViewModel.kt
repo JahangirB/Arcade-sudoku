@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.arcade.sudoku.data.ApiException
 import com.arcade.sudoku.data.BattleBackend
 import com.arcade.sudoku.data.Difficulty
+import com.arcade.sudoku.data.DrawStroke
 import com.arcade.sudoku.data.GameKind
 import com.arcade.sudoku.game.connect4.ConnectFour
 import com.arcade.sudoku.game.words.WordList
@@ -76,6 +77,8 @@ data class BattleUiState(
     /** Word Race: the letters typed for the next guess, and the round they belong to. */
     val wordInput: String = "",
     val wordRound: Int = -1,
+    /** Draw & Guess: the strokes on the canvas this turn (yours appear before the server confirms them). */
+    val drawStrokes: List<DrawStroke> = emptyList(),
     /** Nearby hosts found while looking for a game. */
     val nearbyHosts: List<FoundHost> = emptyList(),
     val scanning: Boolean = false,
@@ -494,6 +497,69 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Draw & Guess: a stroke your partner just drew, sent on its own. */
+    private fun addLiveStroke(json: JSONObject) {
+        val turn = _state.value.room?.draw?.turn ?: return
+        if (json.optInt("turn") != turn) return
+        val stroke = json.optJSONObject("stroke")?.let(DrawStroke::from) ?: return
+        _state.update { it.copy(drawStrokes = it.drawStrokes + stroke) }
+    }
+
+    /** Draw & Guess: you drew [stroke]; it shows at once and goes to your partner in the background. */
+    fun sendStroke(stroke: DrawStroke) {
+        val room = _state.value.room ?: return
+        val id = playerId ?: return
+        val b = backend ?: return
+        if (room.draw?.drawing != true) return
+        _state.update { it.copy(drawStrokes = it.drawStrokes + stroke) }
+        viewModelScope.launch {
+            try {
+                b.stroke(room.code, id, stroke.toJson())
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // A lost stroke only leaves a gap in the drawing.
+            }
+        }
+    }
+
+    fun clearDrawing() {
+        val room = _state.value.room ?: return
+        val id = playerId ?: return
+        val b = backend ?: return
+        _state.update { it.copy(drawStrokes = emptyList()) }
+        viewModelScope.launch {
+            try {
+                val sentAt = System.currentTimeMillis()
+                applyResponse(b.clearDrawing(room.code, id), sentAt)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                showMessage("Could not clear the drawing, try again.")
+            }
+        }
+    }
+
+    /** Draw & Guess: guess what your partner is drawing. */
+    fun guessDrawing(text: String) {
+        val room = _state.value.room ?: return
+        val id = playerId ?: return
+        val b = backend ?: return
+        if (text.isBlank()) return
+        viewModelScope.launch {
+            try {
+                val sentAt = System.currentTimeMillis()
+                applyResponse(b.guess(room.code, id, text), sentAt)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: ApiException) {
+                if (e.fatal) endSession(e.message) else showMessage(e.message)
+            } catch (e: IOException) {
+                showMessage("Network problem, try again.")
+            }
+        }
+    }
+
     /** Ship Battle: fire at the opponent's sea. */
     fun fire(x: Int, y: Int) {
         val s = _state.value
@@ -590,6 +656,8 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
                 b.pushes?.collect { json ->
                     if (json.optString("type") == "error") {
                         if (json.optBoolean("fatal")) endSession(json.optString("error")) else showMessage(json.optString("error"))
+                    } else if (json.optString("type") == "stroke") {
+                        addLiveStroke(json)
                     } else if (json.has("me")) {
                         applyResponse(json, sentAt = null)
                     }
@@ -703,6 +771,7 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
             var next = s.copy(room = room, clockOffsetMs = offset)
             if (newReaction != null) next = next.copy(opponentReaction = newReaction)
             if (room.game == GameKind.WORDS && room.round != next.wordRound) next = next.copy(wordInput = "", wordRound = room.round)
+            room.draw?.let { next = next.copy(drawStrokes = it.strokes) }
             val puzzle = room.puzzle
             if (puzzle != null && room.round != loadedRound) {
                 loadedRound = room.round

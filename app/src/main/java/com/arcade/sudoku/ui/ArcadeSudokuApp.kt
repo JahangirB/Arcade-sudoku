@@ -33,6 +33,7 @@ import com.arcade.sudoku.ui.screens.SoloMemoryScreen
 import com.arcade.sudoku.ui.screens.TurnGameScreen
 import com.arcade.sudoku.ui.screens.SoloWordsScreen
 import com.arcade.sudoku.ui.screens.WordRaceScreen
+import com.arcade.sudoku.ui.screens.DrawGuessScreen
 import com.arcade.sudoku.ui.screens.GameScreen
 import com.arcade.sudoku.ui.screens.HomeScreen
 import com.arcade.sudoku.ui.screens.LobbyScreen
@@ -118,6 +119,7 @@ fun ArcadeSudokuApp(
                     room != null && room.game == GameKind.SHIPS -> ShipsGameScreen(battleState, battle, onLeave = requestLeave)
                     room != null && room.game.turnBased -> TurnGameScreen(battleState, battle, onLeave = requestLeave)
                     room != null && room.game == GameKind.WORDS -> WordRaceScreen(battleState, battle, onLeave = requestLeave)
+                    room != null && room.game == GameKind.DRAW -> DrawGuessScreen(battleState, battle, onLeave = requestLeave)
                     room != null -> GameScreen(battleState, battle, onLeave = requestLeave)
                     dest == Dest.SHIPS -> SoloShipsScreen(shipsState, ships, onHome = { dest = Dest.HOME })
                     dest == Dest.CONNECT4 -> SoloConnectFourScreen(connectFourState, connectFour, onHome = { dest = Dest.HOME })
@@ -157,6 +159,8 @@ fun ArcadeSudokuApp(
                                 GameKind.DOTS -> Dest.DOTS
                                 GameKind.MEMORY -> Dest.MEMORY
                                 GameKind.WORDS -> Dest.WORDS
+                                // Draw & Guess needs two players; its sheet offers no solo game.
+                                GameKind.DRAW -> Dest.HOME
                                 GameKind.SUDOKU -> Dest.SOLO
                             }
                         },

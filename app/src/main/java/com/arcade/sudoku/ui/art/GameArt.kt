@@ -18,6 +18,7 @@ val GameKind.color: Color
         GameKind.DOTS -> Color(0xFF7B6CF0)
         GameKind.MEMORY -> Color(0xFFF2A33A)
         GameKind.WORDS -> Color(0xFF20A47B)
+        GameKind.DRAW -> Color(0xFFE0569B)
     }
 
 /** One line describing each game, for its tile and play sheet. */
@@ -29,6 +30,7 @@ val GameKind.tagline: String
         GameKind.DOTS -> "Close a box, go again"
         GameKind.MEMORY -> "Find the pairs"
         GameKind.WORDS -> "Same word, who finds it first?"
+        GameKind.DRAW -> "One draws, one guesses, as a team"
     }
 
 /** How to play, shown from the play sheet and the in-game Rules button. */
@@ -48,6 +50,9 @@ val GameKind.rules: String
         GameKind.WORDS -> "Find the secret five-letter word in six tries. After each guess the letters turn green " +
             "(right letter, right place), yellow (in the word, elsewhere) or grey (not in the word). In a race you both " +
             "get the same word and see each other's colours, never the letters. Fewest tries wins; on a tie, the faster."
+        GameKind.DRAW -> "You play as a team, four turns, taking turns to draw. The drawer gets a secret word and draws it; " +
+            "the other watches the drawing appear and types guesses. A right guess adds the seconds left (out of 80) " +
+            "to your team score. No letters or words in the drawing!"
     }
 
 /** The game's icon in white (or [tint]), drawn to fill this area. */
@@ -83,6 +88,12 @@ fun DrawScope.drawGameIcon(kind: GameKind, tint: Color) = scale(size.minDimensio
             p.at(8.5, 12.5, -0.17, 1) { p.withAlpha(0.5) { p.rr(3, 5, 11, 15, 2.5, tint) } }
             p.at(15.5, 11.5, 0.14, 1) { p.rr(10, 4, 11, 15, 2.5, null, tint, 2) }
             p.circle(15.5, 11.5, 2.3, tint)
+        }
+        GameKind.DRAW -> {
+            // A pencil drawing a squiggle.
+            p.stroke(tint, 2) { moveTo(3, 19); quadTo(6, 13, 9, 17); quadTo(12, 21, 14, 15) }
+            p.at(17, 9, 0.785, 1) { p.rr(14, 2, 6, 15, 1.5, tint) }
+            p.fill(tint) { moveTo(13.2, 15.6); lineTo(16.5, 18.9); lineTo(12, 20.5); close() }
         }
         GameKind.WORDS -> {
             // Two rows of letter tiles: the top guess part right, the bottom one solved.

@@ -355,6 +355,7 @@ fun TurnReadyCard(room: RoomState, busy: Boolean, onReady: () -> Unit) {
                 room.me.ready -> "Waiting for ${opponent.name}…"
                 opponent.ready -> "${opponent.name} is ready. Tap Ready to start."
                 room.game == GameKind.WORDS -> "The race starts when you are both ready: same word, same moment."
+                room.game == GameKind.DRAW -> "The match starts when you are both ready. You take turns drawing."
                 else -> "The game starts when you are both ready. Starting player swaps every round."
             },
             color = if (opponent?.ready == true && !room.me.ready) p.good else p.muted,

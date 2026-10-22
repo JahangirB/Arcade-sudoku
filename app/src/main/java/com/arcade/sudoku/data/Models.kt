@@ -12,13 +12,14 @@ enum class GameKind(val key: String, val label: String) {
     CONNECT4("connect4", "Connect Four"),
     DOTS("dots", "Dots & Boxes"),
     MEMORY("memory", "Memory Pairs"),
-    WORDS("words", "Word Race");
+    WORDS("words", "Word Race"),
+    DRAW("draw", "Draw & Guess");
 
     /** Played in turns with moves, sharing the server's turn rules. */
     val turnBased get() = this == CONNECT4 || this == DOTS || this == MEMORY
 
     /** Both players just tap Ready to start (no level to agree on, no fleet to place). */
-    val readyOnly get() = turnBased || this == WORDS
+    val readyOnly get() = turnBased || this == WORDS || this == DRAW
 
     companion object {
         fun from(key: String?) = entries.firstOrNull { it.key == key } ?: SUDOKU
@@ -99,6 +100,49 @@ data class WordsView(
     val answer: String?,
 )
 
+/** A Draw & Guess stroke: a polyline in 0-1 coordinates (x, y pairs), one of six colours, thin (1) or thick (2). */
+class DrawStroke(val points: FloatArray, val color: Int, val width: Int) {
+    fun toJson(): JSONObject = JSONObject()
+        .put("points", JSONArray((0 until points.size / 2).map { JSONArray().put(points[it * 2].toDouble()).put(points[it * 2 + 1].toDouble()) }))
+        .put("color", color)
+        .put("width", width)
+
+    companion object {
+        fun from(json: JSONObject): DrawStroke {
+            val pts = json.optJSONArray("points") ?: JSONArray()
+            val flat = FloatArray(pts.length() * 2)
+            for (i in 0 until pts.length()) {
+                val pt = pts.optJSONArray(i) ?: continue
+                flat[i * 2] = pt.optDouble(0).toFloat()
+                flat[i * 2 + 1] = pt.optDouble(1).toFloat()
+            }
+            return DrawStroke(flat, json.optInt("color"), json.optInt("width", 1))
+        }
+    }
+}
+
+/** How a Draw & Guess turn ended. */
+data class DrawTurnResult(val word: String, val guessed: Boolean, val points: Int, val drewIt: Boolean)
+
+/** A Draw & Guess match as one player sees it. */
+data class DrawView(
+    val turn: Int,
+    val turns: Int,
+    /** True when you draw this turn, false when you guess, null between matches. */
+    val drawing: Boolean?,
+    /** The secret word, for the drawer only. */
+    val word: String?,
+    /** The word as underscores, for the guesser. */
+    val hint: String?,
+    /** When this turn's time runs out (server clock). */
+    val endsAt: Long?,
+    val strokes: List<DrawStroke>,
+    /** Wrong guesses this turn: (by me, word). */
+    val guesses: List<Pair<Boolean, String>>,
+    val score: Int,
+    val lastTurn: DrawTurnResult?,
+)
+
 /** A player's latest reaction; [seq] goes up with every new one. */
 data class EmojiEvent(val reaction: Reaction, val seq: Int)
 
@@ -140,6 +184,7 @@ data class RoomState(
     val ships: ShipsView?,
     val turns: TurnsView?,
     val words: WordsView? = null,
+    val draw: DrawView? = null,
     val serverTime: Long,
 ) {
     val isHost get() = role == "host"
@@ -162,6 +207,7 @@ fun parseRoom(json: JSONObject) = RoomState(
     ships = json.optJSONObject("ships")?.let(::parseShips),
     turns = json.optJSONObject("turns")?.let(::parseTurns),
     words = json.optJSONObject("words")?.let(::parseWords),
+    draw = json.optJSONObject("draw")?.let(::parseDraw),
     serverTime = json.getLong("serverTime"),
 )
 
@@ -189,6 +235,21 @@ private fun parseShips(json: JSONObject) = ShipsView(
     sunkEnemy = json.optJSONArray("sunkEnemy").ships(),
     enemyFleet = if (json.isNull("enemyFleet")) null else json.optJSONArray("enemyFleet").ships(),
     lastShotByMe = json.optJSONObject("lastShot")?.optString("by")?.let { it == "me" },
+)
+
+private fun parseDraw(json: JSONObject) = DrawView(
+    turn = json.optInt("turn"),
+    turns = json.optInt("turns", 4),
+    drawing = json.stringOrNull("drawer")?.let { it == "me" },
+    word = json.stringOrNull("word"),
+    hint = json.stringOrNull("hint"),
+    endsAt = json.longOrNull("endsAt"),
+    strokes = json.optJSONArray("strokes").objects().map(DrawStroke::from),
+    guesses = json.optJSONArray("guesses").objects().map { (it.optString("by") == "me") to it.optString("word") },
+    score = json.optInt("score"),
+    lastTurn = json.optJSONObject("lastTurn")?.let {
+        DrawTurnResult(it.optString("word"), it.optBoolean("guessed"), it.optInt("points"), it.optBoolean("drewIt"))
+    },
 )
 
 private fun parseWords(json: JSONObject): WordsView {

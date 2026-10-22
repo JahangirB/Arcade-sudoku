@@ -75,6 +75,7 @@ class NearbyHost(context: Context, private val hostName: String, private val hos
             when {
                 game.turnBased -> setTurnReady(LocalRoom.HOST, ready, now())
                 game == GameKind.WORDS -> setWordsReady(LocalRoom.HOST, ready, now())
+                game == GameKind.DRAW -> setDrawReady(LocalRoom.HOST, ready, now())
                 else -> setReady(LocalRoom.HOST, ready, difficulty, now())
             }
         }
@@ -95,7 +96,17 @@ class NearbyHost(context: Context, private val hostName: String, private val hos
         local { move(LocalRoom.HOST, move, now()) }
 
     override suspend fun guess(code: String, playerId: String, word: String) =
-        local { guessWord(LocalRoom.HOST, word, now()) }
+        local { if (game == GameKind.DRAW) drawGuess(LocalRoom.HOST, word, now()) else guessWord(LocalRoom.HOST, word, now()) }
+
+    override suspend fun stroke(code: String, playerId: String, stroke: JSONObject): JSONObject = withContext(Dispatchers.Main.immediate) {
+        val r = room ?: throw ApiException("The battle is over.", fatal = true)
+        val added = r.addStroke(LocalRoom.HOST, stroke, now())
+        guestEndpoint?.let { send(it, added) }
+        JSONObject().put("type", "ack")
+    }
+
+    override suspend fun clearDrawing(code: String, playerId: String) =
+        local { clearDrawing(LocalRoom.HOST, now()) }
 
     override suspend fun leave(code: String, playerId: String) {
         withContext(Dispatchers.Main.immediate) {
@@ -194,12 +205,26 @@ class NearbyHost(context: Context, private val hostName: String, private val hos
                     r.setTurnReady(LocalRoom.GUEST, msg.optBoolean("ready", true), now)
                 } else if (r.game == GameKind.WORDS) {
                     r.setWordsReady(LocalRoom.GUEST, msg.optBoolean("ready", true), now)
+                } else if (r.game == GameKind.DRAW) {
+                    r.setDrawReady(LocalRoom.GUEST, msg.optBoolean("ready", true), now)
                 } else {
                     r.setReady(LocalRoom.GUEST, msg.optBoolean("ready", true), Difficulty.from(msg.optString("difficulty")), now)
                 }
                 "fire" -> r.fire(LocalRoom.GUEST, msg.optInt("x", -1), msg.optInt("y", -1), now)
                 "move" -> r.move(LocalRoom.GUEST, msg.optJSONObject("move") ?: JSONObject(), now)
-                "guess" -> r.guessWord(LocalRoom.GUEST, msg.optString("word"), now)
+                "guess" -> if (r.game == GameKind.DRAW) {
+                    r.drawGuess(LocalRoom.GUEST, msg.optString("word"), now)
+                } else {
+                    r.guessWord(LocalRoom.GUEST, msg.optString("word"), now)
+                }
+                "stroke" -> {
+                    // Straight to the host's screen; the guest gets a plain acknowledgement.
+                    val added = r.addStroke(LocalRoom.GUEST, msg.optJSONObject("stroke") ?: JSONObject(), now)
+                    send(endpointId, JSONObject().put("type", "ack").put("re", id))
+                    _pushes.tryEmit(added)
+                    return
+                }
+                "clear" -> r.clearDrawing(LocalRoom.GUEST, now)
                 "board" -> r.submitBoard(LocalRoom.GUEST, msg.optString("board"), now)
                 "emoji" -> r.sendEmoji(
                     LocalRoom.GUEST,

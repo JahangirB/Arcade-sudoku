@@ -47,6 +47,10 @@ quick **reactions** (👍 👏 🔥 😂 😮 😅 🤔 😎 ❤️ ⏰). The fi
   new each day) or unlimited **practice**. Word lists from SCOWL (see
   `app/src/main/assets/words/SCOWL-Copyright.txt`).
 
+- **Draw & Guess:** a team game for two. One of you draws a secret word while the other watches
+  the drawing appear live and types guesses; a right guess adds the seconds left (out of 80) to
+  your team score. Four turns, taking turns to draw. Online (Cloudflare) or nearby.
+
 **Play across time zones.** Connect Four, Dots & Boxes and Memory Pairs don't need you both
 online at once: close the app after your move and your partner gets a **"Your turn"**
 notification (Cloudflare server with invitations set up). Tap it to make your move. Turn games
@@ -320,7 +324,7 @@ Requires Android 8.0 (API 26) or newer.
 | --- | --- |
 | `backend/Code.gs` | Apps Script web app: rooms, puzzle generator, start sync, progress, winner |
 | `backend/test/` | Node tests that run `Code.gs` against mocked Apps Script services |
-| `backend/cloudflare/` | Cloudflare Worker: one Durable Object per room (`src/room.js`: Sudoku, Ship Battle and turn-game rules; `src/connect4.js`, `src/dots.js`, `src/memory.js`, `src/words.js`) and a Directory object for invitations (`src/directory.js`, `src/push.js`), with unit and end-to-end tests |
+| `backend/cloudflare/` | Cloudflare Worker: one Durable Object per room (`src/room.js`: Sudoku, Ship Battle and turn-game rules; `src/connect4.js`, `src/dots.js`, `src/memory.js`, `src/words.js`, `src/draw.js`) and a Directory object for invitations (`src/directory.js`, `src/push.js`), with unit and end-to-end tests |
 | `app/src/main/java/com/arcade/sudoku/data/` | Server clients (`BattleApi` for Apps Script, `CloudflareBattle`), response models, invites, profile, updater |
 | `app/src/main/java/com/arcade/sudoku/game/ships/` | Ship Battle rules, random fleets and the computer opponent |
 | `app/src/main/java/com/arcade/sudoku/game/connect4/`, `dots/`, `memory/`, `turns/` | Turn games: Connect Four, Dots & Boxes and Memory Pairs rules, the computer opponents, and the shared move interface |

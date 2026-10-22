@@ -8,6 +8,7 @@ import * as connect4 from './connect4.js';
 import * as dots from './dots.js';
 import * as memory from './memory.js';
 import * as words from './words.js';
+import * as draw from './draw.js';
 
 // Empty cells per level; must match Difficulty in the Android app.
 export const DIFFICULTY_HOLES = { beginner: 30, easy: 38, medium: 46, hard: 50, expert: 54, master: 56 };
@@ -27,7 +28,7 @@ export const ROOM_IDLE_MS = 6 * 60 * 60_000;
 export const TURN_ROOM_IDLE_MS = 7 * 24 * 60 * 60_000;
 const CLOSED_ROOM_MS = 60_000;
 
-export const GAMES = ['sudoku', 'ships', 'connect4', 'dots', 'memory', 'words'];
+export const GAMES = ['sudoku', 'ships', 'connect4', 'dots', 'memory', 'words', 'draw'];
 // What apps from before the version check could play; they don't say which games they know.
 const OLD_APP_GAMES = ['sudoku', 'ships'];
 
@@ -397,6 +398,99 @@ function decideWords(room) {
   }
 }
 
+// ---------------------------------------------------------------------------------------
+// Draw & Guess: a team game. Each turn one player draws a secret word and the other guesses;
+// a right guess adds the seconds left to the team score. The drawer swaps every turn.
+
+/** Ready (or not ready) for a Draw & Guess match; it starts when both are ready. */
+export function setDrawReady(room, role, ready, now, random = Math.random) {
+  if (room.status !== 'lobby' && room.status !== 'finished') {
+    throw new GameError('You can only get ready in the lobby or after a match.');
+  }
+  if (!room.players.guest) throw new GameError('Waiting for an opponent to join.');
+  if (room.players[otherRole(role)].left) throw new GameError('Your opponent has left the battle.');
+  room.players[role].ready = ready !== false;
+  const { host, guest } = room.players;
+  if (host.ready && guest.ready) {
+    Object.assign(room, {
+      round: room.round + 1, status: 'started', startAt: now + COUNTDOWN_MS, winner: null, endReason: null,
+      drawTurn: 0, drawer: random() < 0.5 ? 'host' : 'guest', score: 0, usedWords: [], lastTurn: null,
+    });
+    for (const p of [host, guest]) Object.assign(p, { ready: false, finishedAt: null });
+    nextDrawTurn(room, room.startAt, random, true);
+  }
+  bump(room);
+}
+
+/** Starts the next turn (the other player draws), or ends the match after the last one. */
+function nextDrawTurn(room, now, random = Math.random, first = false) {
+  if (room.drawTurn >= draw.TURNS) {
+    endMatch(room, null, 'done');
+    return;
+  }
+  room.drawTurn += 1;
+  if (!first) room.drawer = otherRole(room.drawer);
+  room.drawWord = draw.pickWord(room.usedWords, random);
+  room.usedWords.push(room.drawWord);
+  Object.assign(room, { strokes: [], drawGuesses: [], turnEndsAt: now + draw.TURN_MS });
+}
+
+/** The drawer adds a stroke. Returns its index; it is sent to the guesser on its own, not as a new state. */
+export function addStroke(room, role, stroke, now) {
+  if (room.game !== 'draw' || room.status !== 'started' || now < room.startAt) throw new GameError('The game is not running.');
+  if (room.drawer !== role) throw new GameError("It's not your turn to draw.");
+  let clean;
+  try {
+    clean = draw.cleanStroke(stroke, room.strokes.length);
+  } catch (err) {
+    throw new GameError(err.message);
+  }
+  room.strokes.push(clean);
+  return { index: room.strokes.length - 1, stroke: clean };
+}
+
+export function clearDrawing(room, role) {
+  if (room.game !== 'draw' || room.status !== 'started') throw new GameError('The game is not running.');
+  if (room.drawer !== role) throw new GameError("It's not your turn to draw.");
+  room.strokes = [];
+  bump(room);
+}
+
+/** The guesser tries a word. A right one scores the seconds left and moves to the next turn. */
+export function drawGuess(room, role, word, now, random = Math.random) {
+  if (room.game !== 'draw' || room.status !== 'started' || now < room.startAt) throw new GameError('The game is not running.');
+  if (room.drawer === role) throw new GameError('You are drawing this turn.');
+  const text = String(word || '').trim().slice(0, 30);
+  if (!text) throw new GameError('Type a guess.');
+  if (draw.isRight(text, room.drawWord)) {
+    const points = Math.max(1, Math.ceil((room.turnEndsAt - now) / 1000));
+    room.score += points;
+    room.lastTurn = { word: room.drawWord, guessed: true, points, drawer: room.drawer };
+    nextDrawTurn(room, now, random);
+  } else {
+    room.drawGuesses.push({ by: role, word: text.toLowerCase() });
+  }
+  bump(room);
+}
+
+function drawView(room, role, status) {
+  const playing = status === 'playing' || status === 'countdown';
+  const mine = room.drawer === role;
+  const last = room.lastTurn;
+  return {
+    turn: room.drawTurn || 0,
+    turns: draw.TURNS,
+    drawer: playing ? (mine ? 'me' : 'opponent') : null,
+    word: playing && mine ? room.drawWord : null,
+    hint: playing && room.drawWord ? draw.hint(room.drawWord) : null,
+    endsAt: playing ? room.turnEndsAt : null,
+    strokes: playing ? room.strokes || [] : [],
+    guesses: playing ? (room.drawGuesses || []).map((g) => ({ by: g.by === role ? 'me' : 'opponent', word: g.word })) : [],
+    score: room.score || 0,
+    lastTurn: last ? { word: last.word, guessed: last.guessed, points: last.points, drewIt: last.drawer === role } : null,
+  };
+}
+
 function wordsView(room, role, status) {
   const me = room.players[role];
   const opponent = room.players[otherRole(role)];
@@ -510,6 +604,12 @@ export function checkTimers(room, now) {
   }
   if (room.status === 'closed' || TURN_GAMES.includes(room.game)) return null;
 
+  if (room.status === 'started' && room.game === 'draw' && now >= room.turnEndsAt) {
+    room.lastTurn = { word: room.drawWord, guessed: false, points: 0, drawer: room.drawer };
+    nextDrawTurn(room, now);
+    bump(room);
+    return 'changed';
+  }
   if (room.status === 'started' && now >= room.startAt) {
     // The player away the longest loses; time before the start does not count.
     const gone = roles
@@ -544,6 +644,7 @@ export function nextDeadline(room) {
     const lastAway = Math.max(...roles.map((r) => room.players[r].awaySince));
     deadlines.push(lastAway + idleLimit(room));
   }
+  if (room.status === 'started' && room.game === 'draw') deadlines.push(room.turnEndsAt);
   if (room.status !== 'closed' && !TURN_GAMES.includes(room.game)) {
     for (const role of roles) {
       const player = room.players[role];
@@ -593,6 +694,7 @@ export function view(room, role, now) {
     ships: room.game === 'ships' ? shipsView(room, role, status) : null,
     turns: TURN_GAMES.includes(room.game) ? turnView(room, role, status) : null,
     words: room.game === 'words' ? wordsView(room, role, status) : null,
+    draw: room.game === 'draw' ? drawView(room, role, status) : null,
   };
 }
 

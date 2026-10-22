@@ -71,6 +71,12 @@ class BattleApi(scriptUrl: String) : BattleBackend {
     override suspend fun guess(code: String, playerId: String, word: String): JSONObject =
         throw ApiException(SHIPS_UNSUPPORTED)
 
+    override suspend fun stroke(code: String, playerId: String, stroke: JSONObject): JSONObject =
+        throw ApiException(SHIPS_UNSUPPORTED)
+
+    override suspend fun clearDrawing(code: String, playerId: String): JSONObject =
+        throw ApiException(SHIPS_UNSUPPORTED)
+
     override suspend fun leave(code: String, playerId: String) {
         call("leave", "code" to code, "playerId" to playerId)
     }

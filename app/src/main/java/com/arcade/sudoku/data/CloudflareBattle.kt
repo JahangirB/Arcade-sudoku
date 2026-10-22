@@ -132,6 +132,12 @@ class CloudflareBattle(serverUrl: String, private val password: String) : Battle
     override suspend fun guess(code: String, playerId: String, word: String) =
         request(JSONObject().put("type", "guess").put("word", word))
 
+    override suspend fun stroke(code: String, playerId: String, stroke: JSONObject) =
+        request(JSONObject().put("type", "stroke").put("stroke", stroke))
+
+    override suspend fun clearDrawing(code: String, playerId: String) =
+        request(JSONObject().put("type", "clear"))
+
     override suspend fun leave(code: String, playerId: String) {
         try {
             withTimeoutOrNull(LEAVE_TIMEOUT_MS) { request(JSONObject().put("type", "leave")) }

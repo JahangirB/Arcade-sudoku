@@ -278,6 +278,7 @@ private fun GameSheet(
             kind == GameKind.SUDOKU -> SecondaryButton("Play solo", onNewSudoku)
             kind == GameKind.MEMORY -> SecondaryButton("Play alone", onSolo)
             kind == GameKind.WORDS -> SecondaryButton("Today's word or practice", onSolo)
+            kind == GameKind.DRAW -> Text("Draw & Guess needs two players: play with your partner, online or nearby.", color = p.muted, fontSize = 13.sp)
             else -> SecondaryButton("Play the computer", onSolo)
         }
         SecondaryButton("Online with a code or nearby", onBattle)

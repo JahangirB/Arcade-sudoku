@@ -69,6 +69,16 @@ class LocalRoom(
     private var turnMatch: TurnMatch? = null
     // Word Race
     private var answer: String? = null
+    // Draw & Guess
+    private var drawTurn = 0
+    private var drawer = HOST
+    private var drawWord = ""
+    private val usedWords = mutableListOf<String>()
+    private var strokes = mutableListOf<JSONObject>()
+    private var drawGuesses = mutableListOf<Pair<String, String>>()
+    private var drawScore = 0
+    private var lastDrawTurn: JSONObject? = null
+    private var turnEndsAt = 0L
     val players = mutableMapOf<String, Player?>(HOST to newPlayer(hostName, hostAvatar), GUEST to null)
 
     fun playerId(role: String) = players.getValue(role)!!.id
@@ -335,6 +345,116 @@ class LocalRoom(
             .put("answer", if (over) answer ?: JSONObject.NULL else JSONObject.NULL)
     }
 
+    /** Draw & Guess: ready (or not) for a match of [DRAW_TURNS] turns; the drawer swaps every turn. */
+    fun setDrawReady(role: String, ready: Boolean, now: Long, random: Random = Random.Default) {
+        if (status != "lobby" && status != "finished") {
+            throw ApiException("You can only get ready in the lobby or after a match.")
+        }
+        val guest = players[GUEST] ?: throw ApiException("Waiting for an opponent to join.")
+        if (players.getValue(other(role))!!.left) throw ApiException("Your opponent has left the battle.")
+        players.getValue(role)!!.ready = ready
+        if (host.ready && guest.ready) {
+            round++
+            status = "started"
+            startAt = now + COUNTDOWN_MS
+            winner = null
+            endReason = null
+            drawTurn = 0
+            drawer = if (random.nextBoolean()) HOST else GUEST
+            drawScore = 0
+            usedWords.clear()
+            lastDrawTurn = null
+            for (p in listOf(host, guest)) {
+                p.ready = false
+                p.finishedAt = null
+            }
+            nextDrawTurn(now + COUNTDOWN_MS, random, first = true)
+        }
+        version++
+    }
+
+    private fun nextDrawTurn(now: Long, random: Random, first: Boolean = false) {
+        if (drawTurn >= DRAW_TURNS) return endMatch(null, "done")
+        drawTurn++
+        if (!first) drawer = other(drawer)
+        val fresh = WordList.drawWords.filter { it !in usedWords }.ifEmpty { WordList.drawWords }
+        drawWord = fresh.random(random)
+        usedWords += drawWord
+        strokes = mutableListOf()
+        drawGuesses = mutableListOf()
+        turnEndsAt = now + DRAW_TURN_MS
+    }
+
+    private fun drawResult(guessed: Boolean, points: Int) = JSONObject()
+        .put("word", drawWord).put("guessed", guessed).put("points", points).put("drawer", drawer)
+
+    private fun checkDrawing(role: String, now: Long) {
+        val start = startAt
+        if (game != GameKind.DRAW || status != "started" || start == null || now < start) throw ApiException("The game is not running.")
+        if (drawer != role) throw ApiException("It's not your turn to draw.")
+    }
+
+    /** Draw & Guess: the drawer adds a stroke. Returns {index, stroke}, sent to the guesser on its own. */
+    fun addStroke(role: String, stroke: JSONObject, now: Long): JSONObject {
+        checkDrawing(role, now)
+        if (strokes.size >= 2000) throw ApiException("The drawing is full. Clear it to keep drawing.")
+        val points = stroke.optJSONArray("points")
+        if (points == null || points.length() !in 1..120) throw ApiException("Bad stroke.")
+        for (i in 0 until points.length()) {
+            val pt = points.optJSONArray(i) ?: throw ApiException("Bad stroke.")
+            if (pt.optDouble(0, -1.0) !in 0.0..1.0 || pt.optDouble(1, -1.0) !in 0.0..1.0) throw ApiException("Bad stroke.")
+        }
+        val clean = JSONObject().put("points", points).put("color", stroke.optInt("color").coerceIn(0, 5)).put("width", if (stroke.optInt("width") == 2) 2 else 1)
+        strokes += clean
+        return JSONObject().put("type", "stroke").put("turn", drawTurn).put("index", strokes.size - 1).put("stroke", clean)
+    }
+
+    fun clearDrawing(role: String, now: Long) {
+        checkDrawing(role, now)
+        strokes = mutableListOf()
+        version++
+    }
+
+    /** Draw & Guess: the guesser tries a word; a right one scores the seconds left. */
+    fun drawGuess(role: String, guess: String, now: Long, random: Random = Random.Default) {
+        val start = startAt
+        if (game != GameKind.DRAW || status != "started" || start == null || now < start) throw ApiException("The game is not running.")
+        if (drawer == role) throw ApiException("You are drawing this turn.")
+        val text = guess.trim().take(30)
+        if (text.isEmpty()) throw ApiException("Type a guess.")
+        if (text.lowercase().filter { it in 'a'..'z' } == drawWord) {
+            val points = maxOf(1, ((turnEndsAt - now + 999) / 1000).toInt())
+            drawScore += points
+            lastDrawTurn = drawResult(guessed = true, points = points)
+            nextDrawTurn(now, random)
+        } else {
+            drawGuesses += role to text.lowercase()
+        }
+        version++
+    }
+
+    private fun drawView(role: String, shown: String): JSONObject {
+        val playing = shown == "playing" || shown == "countdown"
+        val mine = drawer == role
+        return JSONObject()
+            .put("turn", drawTurn)
+            .put("turns", DRAW_TURNS)
+            .put("drawer", if (playing) (if (mine) "me" else "opponent") else JSONObject.NULL)
+            .put("word", if (playing && mine) drawWord else JSONObject.NULL)
+            .put("hint", if (playing && drawWord.isNotEmpty()) drawWord.map { if (it in 'a'..'z') '_' else it }.joinToString("") else JSONObject.NULL)
+            .put("endsAt", if (playing) turnEndsAt else JSONObject.NULL)
+            .put("strokes", org.json.JSONArray(if (playing) strokes else emptyList<JSONObject>()))
+            .put("guesses", org.json.JSONArray(if (playing) drawGuesses.map { (by, w) -> JSONObject().put("by", if (by == role) "me" else "opponent").put("word", w) } else emptyList()))
+            .put("score", drawScore)
+            .put(
+                "lastTurn",
+                lastDrawTurn?.let {
+                    JSONObject().put("word", it.getString("word")).put("guessed", it.getBoolean("guessed"))
+                        .put("points", it.getInt("points")).put("drewIt", it.getString("drawer") == role)
+                } ?: JSONObject.NULL,
+            )
+    }
+
     /** Stores a board during a match; returns true if anything changed. */
     fun submitBoard(role: String, board: String, now: Long): Boolean {
         val player = players.getValue(role)!!
@@ -393,6 +513,12 @@ class LocalRoom(
     fun checkTimers(now: Long): Boolean {
         val start = startAt ?: return false
         if (status != "started" || now < start) return false
+        if (game == GameKind.DRAW && now >= turnEndsAt) {
+            lastDrawTurn = drawResult(guessed = false, points = 0)
+            nextDrawTurn(now, Random.Default)
+            version++
+            return true
+        }
         val gone = players.entries
             .filter { (_, p) -> p != null && !p.connected && now - maxOf(p.awaySince ?: now, start) >= FORFEIT_MS }
             .minByOrNull { it.value!!.awaySince ?: now }
@@ -440,6 +566,7 @@ class LocalRoom(
             .put("ships", if (game == GameKind.SHIPS) shipsView(role, shown) else JSONObject.NULL)
             .put("turns", if (game.turnBased) turnsView(role, shown) else JSONObject.NULL)
             .put("words", if (game == GameKind.WORDS) wordsView(role, shown) else JSONObject.NULL)
+            .put("draw", if (game == GameKind.DRAW) drawView(role, shown) else JSONObject.NULL)
     }
 
     private fun turnsView(role: String, shown: String): JSONObject {
@@ -491,6 +618,8 @@ class LocalRoom(
         const val COUNTDOWN_MS = 5000L
         const val FORFEIT_MS = 45_000L
         const val EMOJI_INTERVAL_MS = 1500L
+        const val DRAW_TURNS = 4
+        const val DRAW_TURN_MS = 80_000L
         // What apps from before the version check could play; they don't say which games they know.
         val OLD_APP_GAMES = listOf("sudoku", "ships")
 
