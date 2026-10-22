@@ -54,6 +54,7 @@ import com.arcade.sudoku.push.PushApi
 import com.arcade.sudoku.data.Difficulty
 import com.arcade.sudoku.data.GameKind
 import com.arcade.sudoku.data.SavedPartner
+import com.arcade.sudoku.ui.art.AvatarImage
 import com.arcade.sudoku.ui.theme.OpponentColor
 import com.arcade.sudoku.data.Profile
 import com.arcade.sudoku.ui.SoloUiState
@@ -96,7 +97,7 @@ fun HomeScreen(
                 ) {
                     val avatar = profile.avatar
                     if (avatar != null) {
-                        Text(avatar.emoji, fontSize = 22.sp)
+                        AvatarImage(avatar, Modifier.fillMaxSize())
                     } else {
                         Icon(Icons.Filled.Person, contentDescription = "Profile", tint = p.primary)
                     }

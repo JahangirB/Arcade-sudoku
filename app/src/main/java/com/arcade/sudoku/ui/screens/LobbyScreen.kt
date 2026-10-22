@@ -43,6 +43,8 @@ import com.arcade.sudoku.data.RoomState
 import com.arcade.sudoku.ui.BattleMode
 import com.arcade.sudoku.ui.BattleUiState
 import com.arcade.sudoku.ui.BattleViewModel
+import com.arcade.sudoku.ui.ShownReaction
+import com.arcade.sudoku.ui.art.ReactionImage
 import com.arcade.sudoku.ui.theme.AppTheme
 import com.arcade.sudoku.ui.theme.OpponentColor
 
@@ -141,7 +143,7 @@ fun LobbyScreen(state: BattleUiState, profile: Profile, vm: BattleViewModel, onL
 }
 
 @Composable
-private fun PlayerRow(player: PlayerInfo, isMe: Boolean, color: Color, reaction: String?) {
+private fun PlayerRow(player: PlayerInfo, isMe: Boolean, color: Color, reaction: ShownReaction?) {
     val p = AppTheme.palette
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
         PlayerAvatar(player.name, color, avatar = player.avatar)
@@ -152,7 +154,7 @@ private fun PlayerRow(player: PlayerInfo, isMe: Boolean, color: Color, reaction:
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.weight(1f),
         )
-        if (reaction != null) Text(reaction, fontSize = 24.sp, modifier = Modifier.padding(end = 8.dp))
+        if (reaction != null) ReactionImage(reaction.reaction, 30.dp, Modifier.padding(end = 8.dp), startedAt = reaction.at)
         when {
             player.online == false -> Pill("Offline", p.bad)
             player.ready && player.difficulty != null -> Pill("Ready · ${player.difficulty.label}", p.good)

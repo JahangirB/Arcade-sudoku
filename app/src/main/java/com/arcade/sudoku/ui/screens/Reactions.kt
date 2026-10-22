@@ -9,16 +9,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.arcade.sudoku.data.Reaction
 import com.arcade.sudoku.ui.ShownReaction
+import com.arcade.sudoku.ui.art.ReactionImage
 import com.arcade.sudoku.ui.theme.AppTheme
 import kotlinx.coroutines.delay
 
@@ -35,15 +34,15 @@ fun ReactionBar(onReact: (Reaction) -> Unit, modifier: Modifier = Modifier) {
     ) {
         Reaction.entries.forEach { reaction ->
             Surface(onClick = { onReact(reaction) }, shape = CircleShape, color = p.accent, modifier = Modifier.size(42.dp)) {
-                Box(contentAlignment = Alignment.Center) { Text(reaction.emoji, fontSize = 20.sp) }
+                Box(contentAlignment = Alignment.Center) { ReactionImage(reaction, 30.dp) }
             }
         }
     }
 }
 
-/** The emoji to show for [shown], or null once it has been on screen long enough. */
-fun visibleReaction(shown: ShownReaction?, now: Long): String? =
-    shown?.takeIf { now - it.at < REACTION_SHOWN_MS }?.reaction?.emoji
+/** [shown] while it should stay on screen, or null once it has been there long enough. */
+fun visibleReaction(shown: ShownReaction?, now: Long): ShownReaction? =
+    shown?.takeIf { now - it.at < REACTION_SHOWN_MS }
 
 /** The local clock, ticking a few times a second so reactions disappear on time. */
 @Composable

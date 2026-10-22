@@ -13,6 +13,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,6 +36,8 @@ import com.arcade.sudoku.ui.screens.SoloScreen
 import com.arcade.sudoku.ui.screens.SoloShipsScreen
 import com.arcade.sudoku.data.GameKind
 import com.arcade.sudoku.ui.screens.UpdateDialog
+import com.arcade.sudoku.ui.art.ReactionBurst
+import com.arcade.sudoku.ui.screens.LocalShipStyle
 import com.arcade.sudoku.ui.theme.AppTheme
 
 private enum class Dest { HOME, PROFILE, BATTLE, SOLO, SHIPS }
@@ -94,45 +97,49 @@ fun ArcadeSudokuApp(
     ) { padding ->
         // The IME insets shrink every screen above the keyboard, so a focused field stays visible.
         Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
-            when {
-                room != null && (room.status == RoomStatus.WAITING || room.status == RoomStatus.LOBBY) ->
-                    LobbyScreen(battleState, profile, battle, onLeave = requestLeave)
-                room != null && room.game == GameKind.SHIPS -> ShipsGameScreen(battleState, battle, onLeave = requestLeave)
-                room != null -> GameScreen(battleState, battle, onLeave = requestLeave)
-                dest == Dest.SHIPS -> SoloShipsScreen(shipsState, ships, onHome = { dest = Dest.HOME })
-                dest == Dest.SOLO -> SoloScreen(soloState, solo, onHome = { dest = Dest.HOME })
-                dest == Dest.PROFILE -> ProfileScreen(
-                    profile, battleState.busy, app, battle, updateState,
-                    onCheckUpdates = { updates.check(manual = true) },
-                    onUpdate = updates::update,
-                    onBack = { dest = Dest.HOME },
-                )
-                dest == Dest.BATTLE -> BattleMenuScreen(
-                    state = battleState,
-                    profile = profile,
-                    vm = battle,
-                    onProfile = { dest = Dest.PROFILE },
-                    onBack = { dest = Dest.HOME },
-                )
-                else -> HomeScreen(
-                    solo = soloState,
-                    profile = profile,
-                    onContinue = {
-                        solo.resume()
-                        dest = Dest.SOLO
-                    },
-                    onNewGame = {
-                        solo.startNew(it)
-                        dest = Dest.SOLO
-                    },
-                    onBattle = { dest = Dest.BATTLE },
-                    onProfile = { dest = Dest.PROFILE },
-                    onShips = { dest = Dest.SHIPS },
-                    partnerBusy = battleState.busy,
-                    onPlayWithPartner = battle::playWithPartner,
-                    onInvitePartner = battle::invitePartner,
-                )
+            CompositionLocalProvider(LocalShipStyle provides profile.shipStyle) {
+                when {
+                    room != null && (room.status == RoomStatus.WAITING || room.status == RoomStatus.LOBBY) ->
+                        LobbyScreen(battleState, profile, battle, onLeave = requestLeave)
+                    room != null && room.game == GameKind.SHIPS -> ShipsGameScreen(battleState, battle, onLeave = requestLeave)
+                    room != null -> GameScreen(battleState, battle, onLeave = requestLeave)
+                    dest == Dest.SHIPS -> SoloShipsScreen(shipsState, ships, onHome = { dest = Dest.HOME })
+                    dest == Dest.SOLO -> SoloScreen(soloState, solo, onHome = { dest = Dest.HOME })
+                    dest == Dest.PROFILE -> ProfileScreen(
+                        profile, battleState.busy, app, battle, updateState,
+                        onCheckUpdates = { updates.check(manual = true) },
+                        onUpdate = updates::update,
+                        onBack = { dest = Dest.HOME },
+                    )
+                    dest == Dest.BATTLE -> BattleMenuScreen(
+                        state = battleState,
+                        profile = profile,
+                        vm = battle,
+                        onProfile = { dest = Dest.PROFILE },
+                        onBack = { dest = Dest.HOME },
+                    )
+                    else -> HomeScreen(
+                        solo = soloState,
+                        profile = profile,
+                        onContinue = {
+                            solo.resume()
+                            dest = Dest.SOLO
+                        },
+                        onNewGame = {
+                            solo.startNew(it)
+                            dest = Dest.SOLO
+                        },
+                        onBattle = { dest = Dest.BATTLE },
+                        onProfile = { dest = Dest.PROFILE },
+                        onShips = { dest = Dest.SHIPS },
+                        partnerBusy = battleState.busy,
+                        onPlayWithPartner = battle::playWithPartner,
+                        onInvitePartner = battle::invitePartner,
+                    )
+                }
             }
+            // A reaction from your opponent plays large over the battle screen.
+            if (room != null) ReactionBurst(battleState.opponentReaction)
         }
     }
 

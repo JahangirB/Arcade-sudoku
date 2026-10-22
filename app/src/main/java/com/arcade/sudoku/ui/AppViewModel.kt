@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import com.arcade.sudoku.data.Avatar
 import com.arcade.sudoku.data.Profile
 import com.arcade.sudoku.data.ProfileStore
+import com.arcade.sudoku.data.ShipStyle
 import com.arcade.sudoku.data.ThemeMode
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -27,4 +28,5 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun setServerPassword(value: String) = store.setServerPassword(value)
     fun setAvatar(value: Avatar?) = store.setAvatar(value)
     fun setTheme(mode: ThemeMode) = store.setTheme(mode)
+    fun setShipStyle(style: ShipStyle) = store.setShipStyle(style)
 }

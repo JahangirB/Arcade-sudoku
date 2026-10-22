@@ -34,6 +34,8 @@ import com.arcade.sudoku.push.Push
 import com.arcade.sudoku.push.PushApi
 import com.arcade.sudoku.ui.theme.OpponentColor
 import com.arcade.sudoku.data.Profile
+import com.arcade.sudoku.data.ShipStyle
+import com.arcade.sudoku.ui.art.AvatarImage
 import com.arcade.sudoku.data.ThemeMode
 import com.arcade.sudoku.ui.AppViewModel
 import com.arcade.sudoku.ui.BattleViewModel
@@ -56,7 +58,7 @@ private fun AvatarPicker(selected: Avatar?, onPick: (Avatar?) -> Unit) {
                         border = if (chosen) BorderStroke(2.dp, p.primary) else null,
                         modifier = Modifier.weight(1f).aspectRatio(1f),
                     ) {
-                        Box(contentAlignment = Alignment.Center) { Text(avatar.emoji, fontSize = 24.sp) }
+                        Box(contentAlignment = Alignment.Center) { AvatarImage(avatar, Modifier.fillMaxSize().padding(3.dp)) }
                     }
                 }
             }
@@ -169,6 +171,16 @@ fun ProfileScreen(
                             selected = profile.theme == mode,
                             onClick = { app.setTheme(mode) },
                             label = { Text(mode.label) },
+                        )
+                    }
+                }
+                Text("Ship Battle style", color = p.muted, fontSize = 13.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ShipStyle.entries.forEach { style ->
+                        FilterChip(
+                            selected = profile.shipStyle == style,
+                            onClick = { app.setShipStyle(style) },
+                            label = { Text(style.label) },
                         )
                     }
                 }

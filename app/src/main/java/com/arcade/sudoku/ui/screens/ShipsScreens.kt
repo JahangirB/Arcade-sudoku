@@ -18,12 +18,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
@@ -33,6 +32,7 @@ import androidx.compose.ui.unit.sp
 import com.arcade.sudoku.data.PlayerInfo
 import com.arcade.sudoku.data.RoomState
 import com.arcade.sudoku.data.RoomStatus
+import com.arcade.sudoku.data.ShipStyle
 import com.arcade.sudoku.game.ships.Fleet
 import com.arcade.sudoku.game.ships.Sea
 import com.arcade.sudoku.game.ships.Ship
@@ -41,13 +41,20 @@ import com.arcade.sudoku.ui.BattleUiState
 import com.arcade.sudoku.ui.BattleViewModel
 import com.arcade.sudoku.ui.SoloShipsUiState
 import com.arcade.sudoku.ui.SoloShipsViewModel
+import com.arcade.sudoku.ui.art.drawSeaArt
+import com.arcade.sudoku.ui.art.drawShipArt
+import com.arcade.sudoku.ui.art.drawShotArt
+import com.arcade.sudoku.ui.art.shipKinds
 import com.arcade.sudoku.ui.theme.AppTheme
 import com.arcade.sudoku.ui.theme.OpponentColor
 
+/** How ships look, from the player's profile. */
+val LocalShipStyle = staticCompositionLocalOf { ShipStyle.TOY }
+
 /**
- * A 10x10 sea. Draws [ships] (your fleet, or enemy ships once revealed), [shots] that landed
- * here (red marks for hits, dots for misses), [sunk] ships in red and a ring on [lastShot].
- * With [onTap] set, tapping a square calls it with its column and row.
+ * A 10x10 sea in the player's ship style. Draws [ships] (your fleet, or enemy ships once
+ * revealed), [shots] that landed here as hit and miss marks, [sunk] ships shaded dark and a
+ * ring on [lastShot]. With [onTap] set, tapping a square calls it with its column and row.
  */
 @Composable
 fun ShipsSea(
@@ -59,8 +66,7 @@ fun ShipsSea(
     onTap: ((Int, Int) -> Unit)? = null,
 ) {
     val p = AppTheme.palette
-    val water = if (p.dark) Color(0xFF16324F) else Color(0xFFDDEEFC)
-    val ship = if (p.dark) Color(0xFF9FB3CF) else Color(0xFF52657F)
+    val style = LocalShipStyle.current
     val tapModifier = if (onTap == null) Modifier else Modifier.pointerInput(onTap) {
         detectTapGestures { offset ->
             val cell = size.width / Sea.SIZE.toFloat()
@@ -69,36 +75,13 @@ fun ShipsSea(
             onTap(x, y)
         }
     }
-    Canvas(modifier.fillMaxWidth().aspectRatio(1f).then(tapModifier)) {
+    Canvas(modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(12.dp)).then(tapModifier)) {
         val cell = size.width / Sea.SIZE
-        val gap = cell * 0.08f
-        drawRoundRect(water, size = size, cornerRadius = CornerRadius(cell * 0.3f))
-        for (i in 1 until Sea.SIZE) {
-            drawLine(p.lineThin.copy(alpha = 0.6f), Offset(i * cell, 0f), Offset(i * cell, size.height), 1f)
-            drawLine(p.lineThin.copy(alpha = 0.6f), Offset(0f, i * cell), Offset(size.width, i * cell), 1f)
-        }
-        fun drawShip(s: Ship, color: Color) {
-            val w = if (s.horizontal) s.len else 1
-            val h = if (s.horizontal) 1 else s.len
-            drawRoundRect(
-                color,
-                topLeft = Offset(s.x * cell + gap, s.y * cell + gap),
-                size = Size(w * cell - 2 * gap, h * cell - 2 * gap),
-                cornerRadius = CornerRadius(cell * 0.35f),
-            )
-        }
-        ships.forEach { drawShip(it, ship) }
-        sunk.forEach { drawShip(it, p.bad.copy(alpha = 0.75f)) }
-        for (shot in shots) {
-            val center = Offset((shot.x + 0.5f) * cell, (shot.y + 0.5f) * cell)
-            if (shot.hit) {
-                val r = cell * 0.28f
-                drawLine(p.bad, center - Offset(r, r), center + Offset(r, r), cell * 0.12f)
-                drawLine(p.bad, center + Offset(-r, r), center + Offset(r, -r), cell * 0.12f)
-            } else {
-                drawCircle(p.muted, radius = cell * 0.12f, center = center)
-            }
-        }
+        drawSeaArt(style, Sea.SIZE, cell)
+        // Sunk ships the list doesn't already hold (revealed enemy ships) are drawn too.
+        val all = ships + sunk.filter { it !in ships }
+        all.zip(shipKinds(all)).forEach { (ship, kind) -> drawShipArt(style, kind, ship, cell, sunk = ship in sunk) }
+        for (shot in shots) drawShotArt(style, shot.x, shot.y, shot.hit, cell)
         lastShot?.let {
             drawCircle(
                 p.primary,

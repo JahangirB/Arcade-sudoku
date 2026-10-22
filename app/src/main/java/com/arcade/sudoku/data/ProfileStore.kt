@@ -10,6 +10,9 @@ import kotlinx.coroutines.flow.update
 
 enum class ThemeMode(val label: String) { SYSTEM("System"), LIGHT("Light"), DARK("Dark") }
 
+/** How the ships look in Ship Battle; each player picks their own. */
+enum class ShipStyle(val label: String) { TOY("Toy Harbor"), PIRATE("Pirate Wood") }
+
 data class LevelStats(val wins: Int = 0, val bestMs: Long? = null)
 
 data class Stats(
@@ -43,6 +46,7 @@ data class Profile(
     /** Only needed for a Cloudflare server whose host set a password. */
     val serverPassword: String = "",
     val theme: ThemeMode = ThemeMode.SYSTEM,
+    val shipStyle: ShipStyle = ShipStyle.TOY,
     val stats: Stats = Stats(),
     val partner: SavedPartner? = null,
     /** This install's permanent id; lets a partner invite you again. */
@@ -80,6 +84,11 @@ class ProfileStore private constructor(private val prefs: SharedPreferences) {
     fun setTheme(mode: ThemeMode) {
         prefs.edit { putString(KEY_THEME, mode.name) }
         _profile.update { it.copy(theme = mode) }
+    }
+
+    fun setShipStyle(style: ShipStyle) {
+        prefs.edit { putString(KEY_SHIP_STYLE, style.name) }
+        _profile.update { it.copy(shipStyle = style) }
     }
 
     fun setPartner(partner: SavedPartner?) {
@@ -153,6 +162,8 @@ class ProfileStore private constructor(private val prefs: SharedPreferences) {
             serverPassword = prefs.getString(KEY_PASSWORD, "").orEmpty(),
             theme = runCatching { ThemeMode.valueOf(prefs.getString(KEY_THEME, "").orEmpty()) }
                 .getOrDefault(ThemeMode.SYSTEM),
+            shipStyle = runCatching { ShipStyle.valueOf(prefs.getString(KEY_SHIP_STYLE, "").orEmpty()) }
+                .getOrDefault(ShipStyle.TOY),
             stats = Stats(solo, prefs.getInt(KEY_BATTLES_WON, 0), prefs.getInt(KEY_BATTLES_LOST, 0)),
         )
     }
@@ -163,6 +174,7 @@ class ProfileStore private constructor(private val prefs: SharedPreferences) {
         private const val KEY_URL = "script_url"
         private const val KEY_NAME = "player_name"
         private const val KEY_THEME = "theme"
+        private const val KEY_SHIP_STYLE = "ship_style"
         private const val KEY_AVATAR = "avatar"
         private const val KEY_DEVICE = "device_id"
         private const val KEY_P_URL = "partner_url"

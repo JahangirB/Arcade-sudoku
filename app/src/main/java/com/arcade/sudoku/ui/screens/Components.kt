@@ -37,6 +37,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.arcade.sudoku.data.Avatar
 import com.arcade.sudoku.data.Difficulty
+import com.arcade.sudoku.ui.ShownReaction
+import com.arcade.sudoku.ui.art.AvatarImage
+import com.arcade.sudoku.ui.art.ReactionImage
 import com.arcade.sudoku.ui.theme.AppTheme
 
 @Composable
@@ -131,23 +134,20 @@ fun ScreenTopBar(title: String, onBack: () -> Unit, actions: @Composable RowScop
 /** A round badge with the player's chosen picture, or their first letter if they have none. */
 @Composable
 fun PlayerAvatar(name: String, color: Color, size: Int = 40, avatar: Avatar? = null) {
+    if (avatar != null) {
+        AvatarImage(avatar, Modifier.size(size.dp))
+        return
+    }
     Box(
         contentAlignment = Alignment.Center,
-        modifier = Modifier
-            .size(size.dp)
-            .clip(CircleShape)
-            .background(if (avatar != null) color.copy(alpha = 0.18f) else color),
+        modifier = Modifier.size(size.dp).clip(CircleShape).background(color),
     ) {
-        if (avatar != null) {
-            Text(avatar.emoji, fontSize = (size * 0.55f).sp)
-        } else {
-            Text(
-                name.trim().firstOrNull()?.uppercase() ?: "?",
-                color = Color.White,
-                fontWeight = FontWeight.Bold,
-                fontSize = (size * 0.45f).sp,
-            )
-        }
+        Text(
+            name.trim().firstOrNull()?.uppercase() ?: "?",
+            color = Color.White,
+            fontWeight = FontWeight.Bold,
+            fontSize = (size * 0.45f).sp,
+        )
     }
 }
 
@@ -163,7 +163,7 @@ fun ProgressRow(
     trailing: String = "$percent%",
     showAvatar: Boolean = false,
     avatar: Avatar? = null,
-    reaction: String? = null,
+    reaction: ShownReaction? = null,
 ) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
         if (showAvatar) {
@@ -172,7 +172,7 @@ fun ProgressRow(
         }
         Box(Modifier.weight(1f)) { ProgressBar(label, percent, color, trailing) }
         if (reaction != null) {
-            Text(reaction, fontSize = 28.sp, modifier = Modifier.padding(start = 8.dp))
+            ReactionImage(reaction.reaction, 34.dp, Modifier.padding(start = 8.dp), startedAt = reaction.at)
         }
     }
 }
