@@ -33,8 +33,9 @@ class BattleApi(scriptUrl: String) {
             "ready" to ready.toString(), "difficulty" to difficulty?.key,
         )
 
-    suspend fun sync(code: String, playerId: String, board: String?) =
-        call("sync", "code" to code, "playerId" to playerId, "board" to board)
+    /** [version] is the last room version the app has; the server then may answer just "unchanged". */
+    suspend fun sync(code: String, playerId: String, board: String?, version: Int?) =
+        call("sync", "code" to code, "playerId" to playerId, "board" to board, "v" to version?.toString())
 
     suspend fun leave(code: String, playerId: String) =
         call("leave", "code" to code, "playerId" to playerId)

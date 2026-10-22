@@ -25,6 +25,7 @@ import com.arcade.sudoku.data.Profile
 import com.arcade.sudoku.data.ThemeMode
 import com.arcade.sudoku.ui.AppViewModel
 import com.arcade.sudoku.ui.BattleViewModel
+import com.arcade.sudoku.ui.UpdateUiState
 import com.arcade.sudoku.ui.theme.AppTheme
 
 /** All setup lives here: name, battle server link, appearance, plus your statistics. */
@@ -34,6 +35,9 @@ fun ProfileScreen(
     busy: Boolean,
     app: AppViewModel,
     battle: BattleViewModel,
+    updates: UpdateUiState,
+    onCheckUpdates: () -> Unit,
+    onUpdate: () -> Unit,
     onBack: () -> Unit,
 ) {
     val p = AppTheme.palette
@@ -96,6 +100,24 @@ fun ProfileScreen(
                             label = { Text(mode.label) },
                         )
                     }
+                }
+            }
+
+            AppCard("App") {
+                Text("Version ${updates.currentVersion}", color = p.text)
+                val available = updates.available
+                if (available != null) {
+                    PrimaryButton(
+                        "Update to ${available.versionName}",
+                        onUpdate,
+                        loading = updates.downloading,
+                    )
+                } else {
+                    SecondaryButton(
+                        if (updates.checking) "Checking…" else "Check for updates",
+                        onCheckUpdates,
+                        enabled = !updates.checking,
+                    )
                 }
             }
 

@@ -4,6 +4,10 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+// CI stamps each build with its run number, so every published APK has a higher versionCode
+// than the one before. Local builds are version 1 and never count as newer than a release.
+val buildNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+
 android {
     namespace = "com.arcade.sudoku"
     compileSdk = 35
@@ -12,8 +16,14 @@ android {
         applicationId = "com.arcade.sudoku"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = buildNumber
+        versionName = "1.0.$buildNumber"
+
+        // Where the in-app updater looks for new releases (the README download button's release).
+        buildConfigField(
+            "String", "UPDATE_BASE_URL",
+            "\"https://github.com/JahangirB/Arcade-sudoku/releases/latest/download\"",
+        )
     }
 
     signingConfigs {
@@ -45,6 +55,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

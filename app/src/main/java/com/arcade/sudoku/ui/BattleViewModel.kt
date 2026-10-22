@@ -22,6 +22,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -74,6 +75,11 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
     private var recordedRound = -1
     private var lastSentBoard: String? = null
     private var bestRoundTripMs = Long.MAX_VALUE
+    /** Room version from the last full reply; -1 forces the server to send everything. */
+    private var lastVersion = -1
+    /** When the opponent's progress last changed, to poll faster while they are active. */
+    private var opponentActiveAt = 0L
+    private val foreground = MutableStateFlow(true)
 
     // --- Start screen -------------------------------------------------------------------------
 
@@ -122,6 +128,7 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
         recordedRound = -1
         lastSentBoard = null
         bestRoundTripMs = Long.MAX_VALUE
+        lastVersion = -1
         val room = applyResponse(json, sentAt, record = false)
         // Joining a finished room must not count its old result again.
         if (room.status == RoomStatus.FINISHED) recordedRound = room.round
@@ -187,15 +194,39 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Called by the UI when the app goes to or comes back from the background. */
+    fun setForeground(value: Boolean) {
+        foreground.value = value
+    }
+
     private fun startPolling() {
         pollJob?.cancel()
         pollJob = viewModelScope.launch {
             while (isActive) {
-                val status = _state.value.room?.status
-                val interval = if (status == RoomStatus.COUNTDOWN || status == RoomStatus.PLAYING) 1500L else 2500L
-                withTimeoutOrNull(interval) { syncNow.receive() }
+                val moved = withTimeoutOrNull(pollInterval()) { syncNow.receive() } != null
+                // Quick successive moves go out together in one call.
+                if (moved) delay(MOVE_BATCH_MS)
+                // Outside a match there is nothing to miss, so don't poll from the background.
+                if (!inMatch()) foreground.first { it }
                 syncOnce()
             }
+        }
+    }
+
+    private fun inMatch(): Boolean {
+        val s = _state.value
+        val phase = s.phase(s.serverNow())
+        return phase == RoomStatus.COUNTDOWN || phase == RoomStatus.PLAYING
+    }
+
+    /** Fast while the opponent is busy, slower when nothing is happening. */
+    private fun pollInterval(): Long {
+        val s = _state.value
+        return when (s.phase(s.serverNow())) {
+            RoomStatus.COUNTDOWN -> 2000L
+            RoomStatus.PLAYING ->
+                if (System.currentTimeMillis() - opponentActiveAt < ACTIVE_WINDOW_MS) 2000L else 4000L
+            else -> 4000L
         }
     }
 
@@ -206,10 +237,15 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
         val board = if (s.canEdit()) Sudoku.encode(s.board!!.cells).takeIf { it != lastSentBoard } else null
         val sentAt = System.currentTimeMillis()
         try {
-            val json = requireApi().sync(room.code, id, board)
-            val updated = applyResponse(json, sentAt)
-            // The server ignores boards that arrive before its own clock reaches the start.
-            if (board != null && updated.status != RoomStatus.COUNTDOWN) lastSentBoard = board
+            val json = requireApi().sync(room.code, id, board, lastVersion.takeIf { it >= 0 })
+            if (json.optBoolean("unchanged")) {
+                // A stored board always changes the version, so "unchanged" means it was not stored.
+                applyUnchanged(json, sentAt)
+            } else {
+                val updated = applyResponse(json, sentAt)
+                // The server ignores boards that arrive before its own clock reaches the start.
+                if (board != null && updated.status != RoomStatus.COUNTDOWN) lastSentBoard = board
+            }
             _state.update { it.copy(reconnecting = false) }
         } catch (e: CancellationException) {
             throw e
@@ -221,16 +257,33 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun applyResponse(json: JSONObject, sentAt: Long, record: Boolean = true): RoomState {
+    /** Server clock minus local clock; the fastest round trip gives the most accurate value. */
+    private fun clockOffset(serverTime: Long, sentAt: Long): Long {
         val receivedAt = System.currentTimeMillis()
-        val room = parseRoom(json)
         val roundTrip = receivedAt - sentAt
-        val offset = if (roundTrip <= bestRoundTripMs) {
-            // The fastest round trip gives the most accurate clock offset.
-            bestRoundTripMs = roundTrip
-            room.serverTime - (sentAt + receivedAt) / 2
-        } else {
-            _state.value.clockOffsetMs
+        if (roundTrip > bestRoundTripMs) return _state.value.clockOffsetMs
+        bestRoundTripMs = roundTrip
+        return serverTime - (sentAt + receivedAt) / 2
+    }
+
+    private fun applyUnchanged(json: JSONObject, sentAt: Long) {
+        val offset = clockOffset(json.getLong("serverTime"), sentAt)
+        val idle = if (json.isNull("opponentIdleMs")) null else json.optLong("opponentIdleMs")
+        _state.update { s ->
+            val room = s.room ?: return@update s
+            s.copy(
+                clockOffsetMs = offset,
+                room = if (idle == null) room else room.copy(opponent = room.opponent?.copy(idleMs = idle)),
+            )
+        }
+    }
+
+    private fun applyResponse(json: JSONObject, sentAt: Long, record: Boolean = true): RoomState {
+        val room = parseRoom(json)
+        val offset = clockOffset(room.serverTime, sentAt)
+        lastVersion = json.optInt("version", -1)
+        if (room.opponent?.progress != _state.value.room?.opponent?.progress) {
+            opponentActiveAt = System.currentTimeMillis()
         }
         _state.update { s ->
             var next = s.copy(room = room, clockOffsetMs = offset)
@@ -255,6 +308,7 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
         api = null
         playerId = null
         loadedRound = -1
+        lastVersion = -1
         _state.update {
             it.copy(
                 room = null, board = null, selected = null, notesMode = false, reconnecting = false,
@@ -298,6 +352,9 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private companion object {
+        const val MOVE_BATCH_MS = 700L
+        const val ACTIVE_WINDOW_MS = 15_000L
+
         fun cleanCode(value: String) = value.uppercase().filter { it in 'A'..'Z' || it in '0'..'9' }.take(12)
     }
 }

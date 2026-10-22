@@ -20,6 +20,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.arcade.sudoku.data.RoomStatus
@@ -29,6 +31,7 @@ import com.arcade.sudoku.ui.screens.HomeScreen
 import com.arcade.sudoku.ui.screens.LobbyScreen
 import com.arcade.sudoku.ui.screens.ProfileScreen
 import com.arcade.sudoku.ui.screens.SoloScreen
+import com.arcade.sudoku.ui.screens.UpdateDialog
 import com.arcade.sudoku.ui.theme.AppTheme
 
 private enum class Dest { HOME, PROFILE, BATTLE, SOLO }
@@ -38,11 +41,13 @@ fun ArcadeSudokuApp(
     app: AppViewModel = viewModel(),
     battle: BattleViewModel = viewModel(),
     solo: SoloViewModel = viewModel(),
+    updates: UpdateViewModel = viewModel(),
 ) {
     val p = AppTheme.palette
     val profile by app.profile.collectAsStateWithLifecycle()
     val battleState by battle.state.collectAsStateWithLifecycle()
     val soloState by solo.state.collectAsStateWithLifecycle()
+    val updateState by updates.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     var dest by rememberSaveable { mutableStateOf(Dest.HOME) }
     var confirmLeave by rememberSaveable { mutableStateOf(false) }
@@ -51,6 +56,13 @@ fun ArcadeSudokuApp(
         battleState.message?.let {
             snackbar.showSnackbar(it)
             battle.dismissMessage()
+        }
+    }
+
+    LaunchedEffect(updateState.message) {
+        updateState.message?.let {
+            snackbar.showSnackbar(it)
+            updates.dismissMessage()
         }
     }
 
@@ -64,6 +76,8 @@ fun ArcadeSudokuApp(
         }
     }
     BackHandler(enabled = room != null, onBack = requestLeave)
+    LifecycleEventEffect(Lifecycle.Event.ON_START) { battle.setForeground(true) }
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { battle.setForeground(false) }
     BackHandler(enabled = room == null && dest != Dest.HOME) {
         if (dest == Dest.SOLO) solo.pause()
         dest = Dest.HOME
@@ -80,7 +94,12 @@ fun ArcadeSudokuApp(
                     LobbyScreen(room, profile, battleState.busy, battle, onLeave = requestLeave)
                 room != null -> GameScreen(battleState, battle, onLeave = requestLeave)
                 dest == Dest.SOLO -> SoloScreen(soloState, solo, onHome = { dest = Dest.HOME })
-                dest == Dest.PROFILE -> ProfileScreen(profile, battleState.busy, app, battle, onBack = { dest = Dest.HOME })
+                dest == Dest.PROFILE -> ProfileScreen(
+                    profile, battleState.busy, app, battle, updateState,
+                    onCheckUpdates = { updates.check(manual = true) },
+                    onUpdate = updates::update,
+                    onBack = { dest = Dest.HOME },
+                )
                 dest == Dest.BATTLE -> BattleMenuScreen(
                     state = battleState,
                     profile = profile,
@@ -104,6 +123,11 @@ fun ArcadeSudokuApp(
                 )
             }
         }
+    }
+
+    // Never interrupt a battle with the update offer.
+    if (room == null && (updateState.showOffer || updateState.needsPermission)) {
+        UpdateDialog(updateState, onUpdate = updates::update, onAllow = updates::allowInstalls, onLater = updates::dismiss)
     }
 
     if (confirmLeave && room != null) {

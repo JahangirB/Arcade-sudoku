@@ -20,6 +20,9 @@ var ROOM_TTL_SECONDS = 6 * 60 * 60;
 var COUNTDOWN_MS = 5000;
 // A player who stops syncing this long during a match forfeits it.
 var INACTIVE_FORFEIT_MS = 45000;
+// How often a sync that changes nothing else still records that the player is around.
+// Most syncs are pure reads and skip both the lock and the cache write.
+var LAST_SEEN_WRITE_MS = 10000;
 // Empty cells per level. The generator removes cells only while the puzzle keeps a
 // single solution, so the hardest levels may end up with a few cells fewer.
 var DIFFICULTY_HOLES = { beginner: 30, easy: 38, medium: 46, hard: 50, expert: 54, master: 56 };
@@ -57,18 +60,14 @@ function handleRequest_(p) {
     if (action === 'ping') {
       return { ok: true, serverTime: Date.now(), version: API_VERSION };
     }
-    var lock = LockService.getScriptLock();
-    if (!lock.tryLock(10000)) {
-      throw new Error('Server is busy, please try again.');
-    }
-    try {
-      var result = dispatch_(action, p, Date.now());
-      result.ok = true;
-      result.serverTime = Date.now();
-      return result;
-    } finally {
-      lock.releaseLock();
-    }
+    var now = Date.now();
+    // sync is by far the most frequent call; it takes the lock only when it has to write.
+    var result = action === 'sync'
+      ? sync_(p, now)
+      : withLock_(function () { return dispatch_(action, p, now); });
+    result.ok = true;
+    result.serverTime = Date.now();
+    return result;
   } catch (err) {
     return {
       ok: false,
@@ -80,12 +79,24 @@ function handleRequest_(p) {
   }
 }
 
+/** Runs fn while holding the script lock, which serialises every write to the cache. */
+function withLock_(fn) {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) {
+    throw new Error('Server is busy, please try again.');
+  }
+  try {
+    return fn();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function dispatch_(action, p, now) {
   switch (action) {
     case 'create': return createRoom_(p, now);
     case 'join': return joinRoom_(p, now);
     case 'ready': return setReady_(p, now);
-    case 'sync': return sync_(p, now);
     case 'leave': return leave_(p, now);
     default: throw new Error('Unknown action: ' + action);
   }
@@ -107,6 +118,8 @@ function createRoom_(p, now) {
     code: code,
     createdAt: now,
     updatedAt: now,
+    // Bumped on every change a player can see; lets sync answer "unchanged".
+    version: 0,
     // Set when a round starts: the level both players agreed on.
     difficulty: null,
     status: 'waiting',
@@ -179,30 +192,78 @@ function setReady_(p, now) {
   return view_(room, role, now);
 }
 
+/**
+ * Uploads the player's board (if any) and returns the room. Reads happen without the lock;
+ * only a new board, a timeout or a stale "last seen" time cause a locked write.
+ * When the client already has the current version (`v`), a tiny "unchanged" reply is sent.
+ */
 function sync_(p, now) {
   var room = requireRoom_(p.code);
   var role = requireRole_(room, p.playerId);
-  var player = room.players[role];
-  var opponent = room.players[otherRole_(role)];
-  player.lastSeen = now;
+  if (!needsWrite_(room, role, p, now)) return syncReply_(room, role, p, now);
 
-  if (p.board && room.status === 'started' && now >= room.startAt && !player.finishedAt) {
-    var board = String(p.board);
-    if (board !== player.board) {
-      validateBoard_(board, room.puzzle);
-      player.board = board;
-      player.progress = progressOf_(board, room.puzzle, room.solution);
-      if (board === room.solution) {
-        player.finishedAt = now;
-        endMatch_(room, role, 'solved');
-      }
+  return withLock_(function () {
+    // Re-read under the lock: another request may have changed the room meanwhile.
+    var fresh = requireRoom_(p.code);
+    var freshRole = requireRole_(fresh, p.playerId);
+    var changed = applySync_(fresh, freshRole, p, now);
+    saveRoom_(fresh, now, !changed);
+    return syncReply_(fresh, freshRole, p, now);
+  });
+}
+
+function needsWrite_(room, role, p, now) {
+  var player = room.players[role];
+  return now - (player.lastSeen || 0) >= LAST_SEEN_WRITE_MS ||
+    newBoard_(room, player, p, now) !== null ||
+    opponentTimedOut_(room, role, now);
+}
+
+/** The uploaded board if it should be stored, otherwise null. */
+function newBoard_(room, player, p, now) {
+  if (!p.board || room.status !== 'started' || now < room.startAt || player.finishedAt) return null;
+  var board = String(p.board);
+  return board === player.board ? null : board;
+}
+
+function opponentTimedOut_(room, role, now) {
+  var opponent = room.players[otherRole_(role)];
+  return room.status === 'started' && now >= room.startAt &&
+    now - Math.max(opponent.lastSeen, room.startAt) > INACTIVE_FORFEIT_MS;
+}
+
+/** Applies a sync to the room; returns true if the other player will see a difference. */
+function applySync_(room, role, p, now) {
+  var player = room.players[role];
+  player.lastSeen = now;
+  var changed = false;
+  var board = newBoard_(room, player, p, now);
+  if (board !== null) {
+    validateBoard_(board, room.puzzle);
+    player.board = board;
+    player.progress = progressOf_(board, room.puzzle, room.solution);
+    changed = true;
+    if (board === room.solution) {
+      player.finishedAt = now;
+      endMatch_(room, role, 'solved');
     }
   }
-  if (room.status === 'started' && now >= room.startAt &&
-      now - Math.max(opponent.lastSeen, room.startAt) > INACTIVE_FORFEIT_MS) {
+  if (opponentTimedOut_(room, role, now)) {
     endMatch_(room, role, 'timeout');
+    changed = true;
   }
-  saveRoom_(room, now);
+  return changed;
+}
+
+function syncReply_(room, role, p, now) {
+  if (p.v !== undefined && p.v !== null && String(p.v) === String(room.version)) {
+    var opponent = room.players[otherRole_(role)];
+    return {
+      unchanged: true,
+      version: room.version,
+      opponentIdleMs: opponent ? Math.max(0, now - (opponent.lastSeen || 0)) : null
+    };
+  }
   return view_(room, role, now);
 }
 
@@ -297,6 +358,7 @@ function view_(room, role, now) {
   var showPuzzle = status === 'countdown' || status === 'playing' || (status === 'finished' && room.round > 0);
   return {
     code: room.code,
+    version: room.version || 0,
     role: role,
     status: status,
     difficulty: room.difficulty,
@@ -362,8 +424,10 @@ function loadRoom_(code) {
   return raw ? JSON.parse(raw) : null;
 }
 
-function saveRoom_(room, now) {
+/** Stores the room. A quiet save (only "last seen" times changed) keeps the version. */
+function saveRoom_(room, now, quiet) {
   room.updatedAt = now;
+  if (!quiet) room.version = (room.version || 0) + 1;
   CacheService.getScriptCache().put(ROOM_PREFIX + room.code, JSON.stringify(room), ROOM_TTL_SECONDS);
 }
 

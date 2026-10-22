@@ -12,6 +12,7 @@ const SOURCE = fs.readFileSync(path.join(__dirname, '..', 'Code.gs'), 'utf8');
 function loadBackend() {
   const store = new Map();
   const clock = { now: 1_700_000_000_000 };
+  const locks = { count: 0 };
   const FakeDate = class extends Date {
     static now() { return clock.now; }
   };
@@ -25,7 +26,7 @@ function loadBackend() {
         remove: (k) => { store.delete(k); }
       })
     },
-    LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock: () => {} }) },
+    LockService: { getScriptLock: () => ({ tryLock: () => { locks.count++; return true; }, releaseLock: () => {} }) },
     Utilities: { getUuid: () => crypto.randomUUID() },
     ContentService: {
       MimeType: { JSON: 'json' },
@@ -36,7 +37,7 @@ function loadBackend() {
   vm.createContext(context);
   vm.runInContext(SOURCE, context);
   const call = (params) => JSON.parse(context.doGet({ parameter: params }).text);
-  return { call, clock, context };
+  return { call, clock, context, locks };
 }
 
 function isValidSolution(grid) {
@@ -297,4 +298,50 @@ test('every level generates a puzzle', () => {
     assert.equal(res.difficulty, level);
     assert.match(res.puzzle, /^[0-9]{81}$/);
   }
+});
+
+test('repeated syncs are lock-free and answer "unchanged" when nothing happened', () => {
+  const b = loadBackend();
+  const { host, guest, started } = startedBattle(b);
+  b.clock.now = started.startAt + 1000;
+  const first = b.call({ action: 'sync', code: 'ABC123', playerId: host.playerId });
+  assert.equal(first.status, 'playing');
+
+  const locksBefore = b.locks.count;
+  b.clock.now += 1500;
+  const again = b.call({ action: 'sync', code: 'ABC123', playerId: host.playerId, v: first.version });
+  assert.equal(again.ok, true);
+  assert.equal(again.unchanged, true, 'nothing changed, so a tiny reply');
+  assert.equal(again.puzzle, undefined);
+  assert.equal(typeof again.opponentIdleMs, 'number');
+  assert.equal(b.locks.count, locksBefore, 'a pure read takes no lock');
+
+  // Without a version the full room comes back, still without a lock.
+  const full = b.call({ action: 'sync', code: 'ABC123', playerId: host.playerId });
+  assert.equal(full.status, 'playing');
+  assert.equal(b.locks.count, locksBefore);
+
+  // The opponent's move changes the version, so the next sync returns the full room.
+  const room = JSON.parse(b.context.CacheService.getScriptCache().get('room_ABC123'));
+  const board = room.puzzle.split('');
+  const empty = board.indexOf('0');
+  board[empty] = room.solution[empty];
+  b.call({ action: 'sync', code: 'ABC123', playerId: guest.playerId, board: board.join('') });
+  assert.ok(b.locks.count > locksBefore, 'storing a board takes the lock');
+  const after = b.call({ action: 'sync', code: 'ABC123', playerId: host.playerId, v: first.version });
+  assert.equal(after.unchanged, undefined);
+  assert.ok(after.opponent.progress > 0);
+  assert.ok(after.version > first.version);
+});
+
+test('"last seen" is refreshed every 10 seconds without changing the version', () => {
+  const b = loadBackend();
+  const { host, started } = startedBattle(b);
+  b.clock.now = started.startAt + 1000;
+  const first = b.call({ action: 'sync', code: 'ABC123', playerId: host.playerId });
+  const locksBefore = b.locks.count;
+  b.clock.now += 11_000;
+  const later = b.call({ action: 'sync', code: 'ABC123', playerId: host.playerId, v: first.version });
+  assert.equal(b.locks.count, locksBefore + 1, 'a stale last-seen time is written');
+  assert.equal(later.unchanged, true, 'but the room did not visibly change');
 });

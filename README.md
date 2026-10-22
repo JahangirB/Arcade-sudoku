@@ -107,6 +107,14 @@ its own cache and (if bound) its own spreadsheet.
   and press *Run*, or run `./gradlew assembleDebug` with JDK 17 and the Android
   SDK installed. The APK is written to `app/build/outputs/apk/debug/`.
 
+**Automatic updates:** when the app starts it checks the latest release (and you can check
+by hand under *Profile → App*). If a newer build exists it offers to update, downloads it and
+opens Android's install screen. The first time, Android asks you to allow Arcade Sudoku to
+install apps; after that each update is two taps. Android only accepts the update if it is
+signed with the same key as the installed app, and it never installs without your
+confirmation. The offer is never shown during a battle. Version 1.0.N is the CI run number.
+Builds older than the updater (anything installed before it existed) need one manual download.
+
 The APK is signed with a debug key that is committed to this repository
 (`app/debug.keystore`). That is fine for sideloading; use your own key before publishing
 to the Play Store.
@@ -135,8 +143,21 @@ and `fatal: true` when the room is gone.
 | `create` | `code`, `name` | Host opens a room; returns `playerId` |
 | `join` | `code`, `name`, optional `playerId` to reconnect | Guest joins; returns `playerId` |
 | `ready` | `code`, `playerId`, `difficulty`, `ready` | Marks the player ready for a level (`beginner`, `easy`, `medium`, `hard`, `expert`, `master`); `ready=false` cancels. A round starts in 5 s only when both players are ready with the same level (also used for rematches) |
-| `sync` | `code`, `playerId`, optional `board` (81 digits, `0` = empty) | Uploads the board, returns room state and opponent progress |
+| `sync` | `code`, `playerId`, optional `board` (81 digits, `0` = empty), optional `v` (last room version seen) | Uploads the board, returns room state and opponent progress, or just `unchanged: true` when the room is still at version `v` |
 | `leave` | `code`, `playerId` | Leaves; forfeits a running match, a host leaving closes the room |
+
+## How light the backend is
+
+- **Reads don't take the lock.** Most `sync` calls only read the room from the cache. The
+  script lock (which serialises writes) is taken only to store a new board, record a timeout,
+  or refresh the player's "last seen" time, which happens at most every 10 seconds.
+- **Tiny replies.** The app sends the room version it already has; if nothing changed the
+  reply is just `{"unchanged": true}` instead of the whole room.
+- **Adaptive polling.** During a match the app checks every 2 s while the opponent is making
+  progress and every 4 s otherwise; the lobby and result screens check every 4 s. Your own
+  moves are sent right away (quick moves within 0.7 s go out together).
+- **No polling in the background** outside a match. During a match polling continues, since
+  stopping for 45 seconds counts as leaving.
 
 ## Development
 

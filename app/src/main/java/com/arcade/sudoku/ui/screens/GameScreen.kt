@@ -37,7 +37,8 @@ import com.arcade.sudoku.ui.theme.AppTheme
 import com.arcade.sudoku.ui.theme.OpponentColor
 import kotlinx.coroutines.delay
 
-private const val OPPONENT_LAG_WARNING_MS = 8_000
+// The server records "last seen" every 10 s and the app polls every 2-4 s, so allow for both.
+private const val OPPONENT_LAG_WARNING_MS = 25_000
 
 @Composable
 fun GameScreen(state: BattleUiState, vm: BattleViewModel, onLeave: () -> Unit) {
