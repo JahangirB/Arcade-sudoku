@@ -143,12 +143,20 @@ fun ArcadeSudokuApp(
                             solo.startNew(it)
                             dest = Dest.SOLO
                         },
-                        onBattle = { dest = Dest.BATTLE },
                         onProfile = { dest = Dest.PROFILE },
-                        onShips = { dest = Dest.SHIPS },
-                        onConnectFour = { dest = Dest.CONNECT4 },
-                        onDots = { dest = Dest.DOTS },
-                        onMemory = { dest = Dest.MEMORY },
+                        onSolo = { game ->
+                            dest = when (game) {
+                                GameKind.SHIPS -> Dest.SHIPS
+                                GameKind.CONNECT4 -> Dest.CONNECT4
+                                GameKind.DOTS -> Dest.DOTS
+                                GameKind.MEMORY -> Dest.MEMORY
+                                GameKind.SUDOKU -> Dest.SOLO
+                            }
+                        },
+                        onBattle = { game ->
+                            battle.setHostGame(game)
+                            dest = Dest.BATTLE
+                        },
                         partnerBusy = battleState.busy,
                         onPlayWithPartner = battle::playWithPartner,
                         onInvitePartner = battle::invitePartner,

@@ -18,6 +18,16 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.Icons
+import com.arcade.sudoku.ui.art.color
+import com.arcade.sudoku.data.GameKind
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -137,32 +147,28 @@ fun ShipsGameScreen(state: BattleUiState, vm: BattleViewModel, onLeave: () -> Un
     val now = rememberTicker()
     val myTurn = ships.turn == "me"
 
-    Column(
-        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("Round ${room.round} · Ship Battle", color = p.text, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                if (state.reconnecting) Text("Reconnecting…", color = p.bad, fontSize = 12.sp)
-            }
-            TextButton(onClick = onLeave) { Text(if (finished) "Exit" else "Quit", color = p.bad) }
-        }
-
-        AppCard {
-            ProgressRow(
-                "You", room.me.progress ?: 0, p.primary, "${room.me.progress ?: 0}% of fleet hit",
-                showAvatar = true, avatar = room.me.avatar, reaction = visibleReaction(state.myReaction, now),
+    var reacting by remember { mutableStateOf(false) }
+    var showRules by remember { mutableStateOf(false) }
+    if (showRules) RulesDialog(GameKind.SHIPS) { showRules = false }
+    val players = listOfNotNull(
+        ChipPlayer("You", room.me.avatar, p.primary, "${room.me.progress ?: 0}% of fleet hit", visibleReaction(state.myReaction, now), active = myTurn),
+        opponent?.let {
+            ChipPlayer(
+                it.name + if (it.online == false) " (offline)" else "", it.avatar, OpponentColor,
+                "${it.progress ?: 0}% of fleet hit", visibleReaction(state.opponentReaction, now), active = ships.turn == "opponent",
             )
-            if (opponent != null) {
-                ProgressRow(
-                    opponent.name + if (opponent.online == false) " (offline)" else "",
-                    opponent.progress ?: 0, OpponentColor, "${opponent.progress ?: 0}% of fleet hit",
-                    showAvatar = true, avatar = opponent.avatar, reaction = visibleReaction(state.opponentReaction, now),
-                )
-                ReactionBar(onReact = vm::react)
-            }
-        }
+        },
+    )
+
+    GameFrame(
+        title = "Ship Battle",
+        subtitle = "Round ${room.round}" + if (state.reconnecting) " · reconnecting…" else "",
+        players = players,
+        glow = GameKind.SHIPS.color,
+        dock = battleDock(finished, onLeave, if (opponent != null) ({ reacting = !reacting }) else null) { showRules = true },
+        trayVisible = reacting,
+        tray = { ReactionBar(onReact = { vm.react(it); reacting = false }) },
+    ) {
 
         if (!finished) {
             TurnBanner(myTurn, opponent?.name ?: "Your opponent")
@@ -259,28 +265,37 @@ private fun ShipsResult(room: RoomState) {
 fun SoloShipsScreen(state: SoloShipsUiState, vm: SoloShipsViewModel, onHome: () -> Unit) {
     val p = AppTheme.palette
     val game = state.game
-    Column(Modifier.fillMaxSize()) {
-        ScreenTopBar("Ship Battle", onHome)
-        Column(
-            modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            if (game == null) {
-                AppCard("Your fleet") {
-                    Text(
-                        "Sink the computer's five ships before it sinks yours. A hit lets you fire again.",
-                        color = p.muted,
-                        fontSize = 14.sp,
-                    )
-                    ShipsSea(ships = state.draft, shots = emptyList())
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        SecondaryButton("Shuffle", vm::shuffle, Modifier.weight(1f))
-                        PrimaryButton("Start battle", vm::start, Modifier.weight(1f))
-                    }
+    var showRules by remember { mutableStateOf(false) }
+    if (showRules) RulesDialog(GameKind.SHIPS) { showRules = false }
+    GameFrame(
+        title = "Ship Battle",
+        subtitle = "Against the computer",
+        players = if (game == null) emptyList() else listOf(
+            ChipPlayer("You", null, p.primary, "${game.myProgress}% of fleet hit", active = game.myTurn && game.winner == null),
+            ChipPlayer("Computer", null, OpponentColor, "${game.theirProgress}% of fleet hit", active = !game.myTurn && game.winner == null),
+        ),
+        glow = GameKind.SHIPS.color,
+        dock = listOf(
+            DockAction("Home", Icons.Filled.Home, onClick = onHome),
+            DockAction("Rules", Icons.Filled.Info) { showRules = true },
+            DockAction("New battle", Icons.Filled.Refresh, enabled = game != null, onClick = vm::newBattle),
+        ),
+    ) {
+        if (game == null) {
+            AppCard("Your fleet") {
+                Text(
+                    "Sink the computer's five ships before it sinks yours. A hit lets you fire again.",
+                    color = p.muted,
+                    fontSize = 14.sp,
+                )
+                ShipsSea(ships = state.draft, shots = emptyList())
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    SecondaryButton("Shuffle", vm::shuffle, Modifier.weight(1f))
+                    PrimaryButton("Start battle", vm::start, Modifier.weight(1f))
                 }
-            } else {
-                SoloShipsBattle(game, vm, onHome)
             }
+        } else {
+            SoloShipsBattle(game, vm, onHome)
         }
     }
 }
@@ -289,10 +304,6 @@ fun SoloShipsScreen(state: SoloShipsUiState, vm: SoloShipsViewModel, onHome: () 
 private fun SoloShipsBattle(game: com.arcade.sudoku.game.ships.SoloShips, vm: SoloShipsViewModel, onHome: () -> Unit) {
     val p = AppTheme.palette
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            AppCard {
-                ProgressRow("You", game.myProgress, p.primary, "${game.myProgress}% of fleet hit")
-                ProgressRow("Computer", game.theirProgress, OpponentColor, "${game.theirProgress}% of fleet hit")
-            }
             if (game.winner == null) TurnBanner(game.myTurn, "The computer")
 
             Text("Enemy sea", color = p.text, fontWeight = FontWeight.SemiBold)

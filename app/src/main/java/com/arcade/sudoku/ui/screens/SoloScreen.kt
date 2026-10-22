@@ -19,6 +19,15 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import com.arcade.sudoku.ui.theme.DisplayFont
+import com.arcade.sudoku.ui.art.color
+import com.arcade.sudoku.data.GameKind
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -69,36 +78,27 @@ fun SoloScreen(
     val paused = game.status == SoloStatus.PAUSED
     val playing = game.status == SoloStatus.PLAYING
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+    var showRules by remember { mutableStateOf(false) }
+    if (showRules) RulesDialog(GameKind.SUDOKU) { showRules = false }
+    GameFrame(
+        title = "Sudoku",
+        subtitle = "${game.difficulty.label} · Mistakes ${game.mistakes}/${SoloGame.MAX_MISTAKES}",
+        players = emptyList(),
+        glow = GameKind.SUDOKU.color,
+        dock = listOf(
+            DockAction("Home", Icons.Filled.Home) {
+                vm.pause()
+                onHome()
+            },
+            DockAction(if (paused) "Resume" else "Pause", if (paused) Icons.Filled.PlayArrow else GameIcons.Pause, enabled = game.isActive) {
+                if (paused) vm.resume() else vm.pause()
+            },
+            DockAction("Rules", Icons.Filled.Info) { showRules = true },
+        ),
+        trailing = {
+            Text(formatDuration(game.elapsedMs), color = p.text, fontSize = 22.sp, fontFamily = DisplayFont, fontWeight = FontWeight.Bold)
+        },
     ) {
-        ScreenTopBar(game.difficulty.label, onBack = {
-            vm.pause()
-            onHome()
-        }, actions = {
-            IconButton(onClick = { if (paused) vm.resume() else vm.pause() }, enabled = game.isActive) {
-                if (paused) {
-                    Icon(Icons.Filled.PlayArrow, contentDescription = "Resume", tint = p.text)
-                } else {
-                    Icon(GameIcons.Pause, contentDescription = "Pause", tint = p.text)
-                }
-            }
-        })
-
-        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                "Mistakes  ${game.mistakes}/${SoloGame.MAX_MISTAKES}",
-                color = if (game.mistakes > 0) p.bad else p.muted,
-                fontSize = 15.sp,
-                modifier = Modifier.weight(1f),
-            )
-            Text(formatDuration(game.elapsedMs), color = p.text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-        }
-
         Box(contentAlignment = Alignment.Center) {
             SudokuGrid(
                 board = game.board,

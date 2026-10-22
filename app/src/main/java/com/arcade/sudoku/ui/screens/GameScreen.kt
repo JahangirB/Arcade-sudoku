@@ -33,6 +33,9 @@ import com.arcade.sudoku.game.BoardState
 import com.arcade.sudoku.game.Sudoku
 import com.arcade.sudoku.ui.BattleUiState
 import com.arcade.sudoku.ui.BattleViewModel
+import com.arcade.sudoku.data.GameKind
+import com.arcade.sudoku.ui.art.color
+import com.arcade.sudoku.ui.theme.DisplayFont
 import com.arcade.sudoku.ui.theme.AppTheme
 import com.arcade.sudoku.ui.theme.OpponentColor
 import kotlinx.coroutines.delay
@@ -60,59 +63,36 @@ fun GameScreen(state: BattleUiState, vm: BattleViewModel, onLeave: () -> Unit) {
     val conflicts = board.conflicts()
     val localNow = rememberTicker()
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 12.dp, vertical = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    "Round ${room.round} · ${room.difficulty?.label.orEmpty()}",
-                    color = p.text, fontWeight = FontWeight.Bold, fontSize = 16.sp,
-                )
-                if (state.reconnecting) Text("Reconnecting…", color = p.bad, fontSize = 12.sp)
-            }
-            Text(
-                formatDuration(elapsedMs(room, phase, now, startAt)),
-                color = p.text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold,
+    var reacting by remember { mutableStateOf(false) }
+    var showRules by remember { mutableStateOf(false) }
+    val finished = phase == RoomStatus.FINISHED
+    val myPercent = room.me.progress?.takeIf { finished } ?: Sudoku.filledPercent(board.cells, board.givens)
+    val players = listOfNotNull(
+        // During a match only the filled share is known locally; the server reveals the solved share once it is over.
+        ChipPlayer("You", room.me.avatar, p.primary, if (finished) "$myPercent% solved" else "$myPercent% filled", visibleReaction(state.myReaction, localNow)),
+        opponent?.let {
+            val lagging = playing && (it.online == false || it.idleMs > OPPONENT_LAG_WARNING_MS)
+            ChipPlayer(
+                it.name, it.avatar, OpponentColor,
+                if (lagging) "connection lost?" else "${it.progress ?: 0}% solved",
+                visibleReaction(state.opponentReaction, localNow),
             )
-            TextButton(onClick = onLeave) {
-                Text(if (phase == RoomStatus.FINISHED) "Exit" else "Quit", color = p.bad)
-            }
-        }
+        },
+    )
+    if (showRules) RulesDialog(GameKind.SUDOKU) { showRules = false }
 
-        AppCard {
-            val myPercent = room.me.progress?.takeIf { phase == RoomStatus.FINISHED }
-                ?: Sudoku.filledPercent(board.cells, board.givens)
-            ProgressRow(
-                label = "You",
-                percent = myPercent,
-                color = p.primary,
-                showAvatar = true,
-                avatar = room.me.avatar,
-                reaction = visibleReaction(state.myReaction, localNow),
-                // During a match only the filled share is known locally; the server reveals
-                // the solved share once it is over.
-                trailing = if (phase == RoomStatus.FINISHED) "$myPercent% solved" else "$myPercent% filled",
-            )
-            if (opponent != null) {
-                val lagging = playing && (opponent.online == false || opponent.idleMs > OPPONENT_LAG_WARNING_MS)
-                val oppPercent = opponent.progress ?: 0
-                ProgressRow(
-                    label = opponent.name + if (lagging) " (connection lost?)" else "",
-                    percent = oppPercent,
-                    color = OpponentColor,
-                    trailing = "$oppPercent% solved",
-                    showAvatar = true,
-                    avatar = opponent.avatar,
-                    reaction = visibleReaction(state.opponentReaction, localNow),
-                )
-                ReactionBar(onReact = vm::react)
-            }
-        }
+    GameFrame(
+        title = "Sudoku",
+        subtitle = "Round ${room.round} · ${room.difficulty?.label.orEmpty()}" + if (state.reconnecting) " · reconnecting…" else "",
+        players = players,
+        glow = GameKind.SUDOKU.color,
+        dock = battleDock(finished, onLeave, if (opponent != null) ({ reacting = !reacting }) else null) { showRules = true },
+        trailing = {
+            Text(formatDuration(elapsedMs(room, phase, now, startAt)), color = p.text, fontSize = 22.sp, fontFamily = DisplayFont, fontWeight = FontWeight.Bold)
+        },
+        trayVisible = reacting,
+        tray = { ReactionBar(onReact = { vm.react(it); reacting = false }) },
+    ) {
 
         Box(contentAlignment = Alignment.Center) {
             SudokuGrid(

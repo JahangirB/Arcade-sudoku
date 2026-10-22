@@ -40,7 +40,59 @@ import com.arcade.sudoku.data.Difficulty
 import com.arcade.sudoku.ui.ShownReaction
 import com.arcade.sudoku.ui.art.AvatarImage
 import com.arcade.sudoku.ui.art.ReactionImage
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.unit.Dp
+import com.arcade.sudoku.ui.theme.DisplayFont
 import com.arcade.sudoku.ui.theme.AppTheme
+
+/**
+ * The Toy Box "pressed edge": a strip of [color] peeking out under a card or button, like the
+ * thick base of a toy block. Draw it before the element's own background.
+ */
+fun Modifier.pressedEdge(color: Color, radius: Dp, depth: Dp = 3.dp) = drawBehind {
+    drawRoundRect(color, topLeft = Offset(0f, depth.toPx()), size = size, cornerRadius = CornerRadius(radius.toPx()))
+}
+
+/** A button that sinks onto its edge while pressed. */
+@Composable
+private fun ToyButton(
+    onClick: () -> Unit,
+    modifier: Modifier,
+    enabled: Boolean,
+    container: Color,
+    content: Color,
+    body: @Composable () -> Unit,
+) {
+    val p = AppTheme.palette
+    val press = remember { MutableInteractionSource() }
+    val pressed by press.collectIsPressedAsState()
+    val shape = RoundedCornerShape(16.dp)
+    Box(modifier.fillMaxWidth().height(54.dp).pressedEdge(p.ink.copy(alpha = if (enabled) 1f else 0.3f), 16.dp)) {
+        Button(
+            onClick = onClick,
+            enabled = enabled,
+            shape = shape,
+            interactionSource = press,
+            border = BorderStroke(2.dp, p.ink.copy(alpha = if (enabled) 1f else 0.3f)),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = container,
+                contentColor = content,
+                disabledContainerColor = container.copy(alpha = 0.45f),
+                disabledContentColor = content.copy(alpha = 0.8f),
+            ),
+            elevation = null,
+            modifier = Modifier.fillMaxSize().offset(y = if (pressed) 3.dp else 0.dp),
+        ) { body() }
+    }
+}
 
 @Composable
 fun PrimaryButton(
@@ -52,22 +104,11 @@ fun PrimaryButton(
     container: Color = AppTheme.palette.primary,
     content: Color = AppTheme.palette.onPrimary,
 ) {
-    Button(
-        onClick = onClick,
-        enabled = enabled && !loading,
-        shape = RoundedCornerShape(14.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = container,
-            contentColor = content,
-            disabledContainerColor = container.copy(alpha = 0.35f),
-            disabledContentColor = content.copy(alpha = 0.8f),
-        ),
-        modifier = modifier.fillMaxWidth().height(54.dp),
-    ) {
+    ToyButton(onClick, modifier, enabled && !loading, container, content) {
         if (loading) {
             CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp, color = content)
         } else {
-            Text(text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+            Text(text, fontSize = 17.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -80,22 +121,12 @@ fun SecondaryButton(
     enabled: Boolean = true,
 ) {
     val p = AppTheme.palette
-    Button(
-        onClick = onClick,
-        enabled = enabled,
-        shape = RoundedCornerShape(14.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = p.accent,
-            contentColor = p.primary,
-            disabledContainerColor = p.accent.copy(alpha = 0.5f),
-            disabledContentColor = p.muted,
-        ),
-        modifier = modifier.fillMaxWidth().height(54.dp),
-    ) {
-        Text(text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+    ToyButton(onClick, modifier, enabled, p.card, p.text) {
+        Text(text, fontSize = 17.sp, fontWeight = FontWeight.Bold)
     }
 }
 
+/** A white card with an ink outline and a pressed edge; [title] in the rounded heading font. */
 @Composable
 fun AppCard(
     title: String? = null,
@@ -105,12 +136,12 @@ fun AppCard(
     val p = AppTheme.palette
     Surface(
         color = p.card,
-        shape = RoundedCornerShape(18.dp),
-        border = BorderStroke(1.dp, p.lineThin.copy(alpha = 0.5f)),
-        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(2.dp, p.ink),
+        modifier = modifier.fillMaxWidth().pressedEdge(p.ink, 20.dp),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (title != null) Text(title, color = p.text, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            if (title != null) Text(title, color = p.text, fontSize = 21.sp, fontFamily = DisplayFont, fontWeight = FontWeight.Bold)
             content()
         }
     }
@@ -126,7 +157,7 @@ fun ScreenTopBar(title: String, onBack: () -> Unit, actions: @Composable RowScop
         IconButton(onClick = onBack) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = p.text)
         }
-        Text(title, color = p.text, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+        Text(title, color = p.text, fontSize = 24.sp, fontFamily = DisplayFont, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
         actions()
     }
 }
