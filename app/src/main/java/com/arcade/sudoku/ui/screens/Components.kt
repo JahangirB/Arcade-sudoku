@@ -93,8 +93,8 @@ fun SecondaryButton(
 
 @Composable
 fun AppCard(
-    modifier: Modifier = Modifier,
     title: String? = null,
+    modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
     val p = AppTheme.palette
