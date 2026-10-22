@@ -231,6 +231,12 @@ Firebase Cloud Messaging. It is free. The host does this once:
    asks for the notification permission), and play one online battle together. From then on
    **Invite** works.
 
+Check it worked: open `https://YOUR-WORKER.workers.dev/ping` (add `?password=…` if you set
+one). It shows `"invitations": true` once the key is set. If it says `false`, the secret is
+missing, misspelled, saved as *Text* instead of *Secret* (Cloudflare removes plain-text
+variables on the next deploy from GitHub), or was added under *Build* variables instead of
+the Worker's *Variables and Secrets*.
+
 If an invitation fails with a permission error, open the Google Cloud console for the same
 project and make sure **Firebase Cloud Messaging API** is enabled.
 

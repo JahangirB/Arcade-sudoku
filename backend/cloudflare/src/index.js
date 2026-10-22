@@ -32,7 +32,11 @@ export default {
 
     const path = url.pathname.replace(/\/+$/, '');
     if (path === '' || path === '/ping') {
-      return json({ ok: true, serverTime: Date.now(), version: API_VERSION, kind: 'cloudflare' });
+      return json({
+        ok: true, serverTime: Date.now(), version: API_VERSION, kind: 'cloudflare',
+        // Whether the Firebase key for invitations is set, to make setup easy to check.
+        invitations: !!env.FIREBASE_SERVICE_ACCOUNT,
+      });
     }
 
     if (request.method === 'POST' && ['/register', '/invite', '/invite/reply'].includes(path)) {
@@ -286,7 +290,11 @@ export class Directory extends DurableObject {
   async notify(kind, body) {
     try {
       if (!this.env.FIREBASE_SERVICE_ACCOUNT) {
-        throw new DirectoryError('Invitations are not set up on this server yet (FIREBASE_SERVICE_ACCOUNT is missing).', 'push_not_configured');
+        throw new DirectoryError(
+          'Invitations are not set up on this server: add the Firebase key as a Secret named ' +
+            'FIREBASE_SERVICE_ACCOUNT under the Worker\'s Settings → Variables and Secrets.',
+          'push_not_configured',
+        );
       }
       const message = await prepareMessage(this.store, kind, body || {});
       this.sender ??= createPushSender(JSON.parse(this.env.FIREBASE_SERVICE_ACCOUNT));

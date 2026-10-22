@@ -78,6 +78,7 @@ test('a full battle over WebSockets', { skip: !enabled, timeout: 90_000 }, async
   const ping = await (await fetch(`${BASE}/ping?password=pw1`)).json();
   assert.equal(ping.ok, true);
   assert.equal(ping.kind, 'cloudflare');
+  assert.equal(ping.invitations, false, 'no Firebase key in the test server');
   assert.equal((await fetch(`${BASE}/ping?password=wrong`)).status, 401);
 
   const code = `T${Date.now().toString(36).toUpperCase()}`.slice(0, 12);
