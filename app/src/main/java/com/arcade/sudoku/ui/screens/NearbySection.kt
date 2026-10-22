@@ -40,7 +40,8 @@ private fun nearbyPermissions(): Array<String> = buildList {
         add(Manifest.permission.BLUETOOTH_ADVERTISE)
         add(Manifest.permission.BLUETOOTH_CONNECT)
     }
-    if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.S_V2) add(Manifest.permission.ACCESS_FINE_LOCATION)
+    add(Manifest.permission.ACCESS_COARSE_LOCATION)
+    add(Manifest.permission.ACCESS_FINE_LOCATION)
 }.toTypedArray()
 
 /** Host or find a battle with a phone in the same room, without internet or a server. */
@@ -83,7 +84,7 @@ fun NearbySection(state: BattleUiState, vm: BattleViewModel) {
         )
         if (denied) {
             Text(
-                "Nearby battles need the Bluetooth and nearby devices permissions. " +
+                "Nearby battles need the Bluetooth, location, and nearby devices permissions (precise location). " +
                     "You can allow them in the app's settings.",
                 color = p.bad,
                 fontSize = 13.sp,
