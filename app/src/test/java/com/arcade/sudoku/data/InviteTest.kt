@@ -40,7 +40,7 @@ class InviteTest {
 }
 
 class InvitePasswordTest {
-    private val url = "https://arcade-sudoku.jahangir.workers.dev"
+    private val url = "https://game-suite.example.workers.dev"
 
     @Test
     fun cloudflareInviteWithPasswordParsesBack() {

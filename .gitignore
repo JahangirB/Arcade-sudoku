@@ -12,5 +12,6 @@
 *.apk
 *.aab
 *.keystore
-!app/debug.keystore
+# Your Firebase project's config: CI writes it from the GOOGLE_SERVICES_JSON secret.
+app/google-services.json
 *.jks

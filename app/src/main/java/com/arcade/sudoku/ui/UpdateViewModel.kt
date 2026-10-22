@@ -43,6 +43,11 @@ class UpdateViewModel(app: Application) : AndroidViewModel(app) {
 
     fun check(manual: Boolean) {
         if (_state.value.checking) return
+        // Builds made outside CI don't know which repository to update from.
+        if (BuildConfig.UPDATE_BASE_URL.isEmpty()) {
+            if (manual) _state.update { it.copy(message = "This build doesn't update itself.") }
+            return
+        }
         viewModelScope.launch {
             _state.update { it.copy(checking = true) }
             try {

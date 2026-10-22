@@ -136,10 +136,10 @@ day, it doesn't bill you). For the one-click option also a free GitHub account.
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/JahangirB/Game-Suite/tree/ccr-d293cbfe-amy86v/backend/cloudflare)
 
 1. Sign up at Cloudflare and confirm your email. The first time, Cloudflare asks you to
-   pick a `workers.dev` subdomain (for example `jahangir`).
+   pick a `workers.dev` subdomain (for example `alex`).
 2. Tap the button above, sign in, connect GitHub when asked and keep the project name
    `arcade-sudoku`. Cloudflare copies the server into your GitHub and deploys it.
-3. You get a link like `https://arcade-sudoku.jahangir.workers.dev`. That is the
+3. You get a link like `https://game-suite.alex.workers.dev`. That is the
    **server link**.
 
 **Option B: command line.** Install [Node.js](https://nodejs.org), download this
@@ -174,9 +174,10 @@ also open rooms on your server, so send the password separately if that matters 
 GitHub, which never receives updates. To get updates automatically, connect the Worker to
 this repository instead: *Workers & Pages → your Worker → Settings → Builds*, disconnect the
 copy, connect `JahangirB/Game-Suite` with the default branch, root directory `/` and deploy
-command `npx wrangler deploy`. Every push then redeploys the server. The `name` in
-`wrangler.jsonc` must match your Worker's name (here `arcade-sudoku1`). With the command
-line, download the new code and run `npx wrangler deploy` again.
+command `npx wrangler deploy --name YOUR-WORKER-NAME`. Every push then redeploys the server.
+(The `name` in `wrangler.jsonc` is `game-suite`; `--name` deploys under your Worker's name
+instead. If Cloudflare still reports a name mismatch, name the Worker `game-suite`.) With the
+command line, download the new code and run `npx wrangler deploy` again.
 
 **Free limits** (check Cloudflare's pricing page, they change): around 100,000 requests a
 day; a battle is a few hundred small messages, so thousands of matches a day fit.
@@ -216,11 +217,11 @@ Firebase Cloud Messaging. It is free. The host does this once:
 
 1. Open the [Firebase console](https://console.firebase.google.com), **Create a project**
    (any name, e.g. `game-suite`; Google Analytics can be off).
-2. In the project, **Add app → Android**. Package name: **`com.gamesuite.app`** (exactly this;
-   it is the app's internal id). App nickname: Game Suite. Register, then **download
-   `google-services.json`** and skip the remaining steps. Put the file in `app/` of this
-   repository (or send it to whoever builds the app). It identifies your Firebase project
-   and is not a secret; the next build switches invitations on.
+2. In the project, **Add app → Android**. Package name: your app id, **`com.gamesuite.app`**
+   unless you set your own (see *Make your own copy*). App nickname: Game Suite. Register,
+   then **download `google-services.json`** and skip the remaining steps (no Gradle changes
+   are needed). Don't commit the file: add its content as the **`GOOGLE_SERVICES_JSON`**
+   repository secret; the next build switches invitations on.
 3. In Firebase: **Project settings → Service accounts → Generate new private key**. This
    downloads a JSON key, which *is* secret: don't commit or share it.
 4. In Cloudflare: **Workers & Pages → your Worker → Settings → Variables and Secrets → Add**,
@@ -243,23 +244,45 @@ project and make sure **Firebase Cloud Messaging API** is enabled.
 
 - **Download:** use the **Download** button at the top of this page. It always points to the
   newest build, which CI publishes as the *latest* release whenever the default branch changes.
-  Builds are signed with the same key, so a new download installs over the old one and keeps
-  your saved game and settings.
+  Builds are signed with the repository owner's private key, so a new download installs over
+  the old one and keeps your saved game and settings.
 - **Build it yourself:** open the project in Android Studio (Ladybug or newer)
   and press *Run*, or run `./gradlew assembleDebug` with JDK 17 and the Android
   SDK installed. The APK is written to `app/build/outputs/apk/debug/`.
 
 **Automatic updates:** when the app starts it checks the latest release (and you can check
 by hand under *Profile → App*). If a newer build exists it offers to update, downloads it and
-opens Android's install screen. The first time, Android asks you to allow Arcade Sudoku to
+opens Android's install screen. The first time, Android asks you to allow Game Suite to
 install apps; after that each update is two taps. Android only accepts the update if it is
 signed with the same key as the installed app, and it never installs without your
 confirmation. The offer is never shown during a battle. Version 1.0.N is the CI run number.
 Builds older than the updater (anything installed before it existed) need one manual download.
 
-The APK is signed with a debug key that is committed to this repository
-(`app/debug.keystore`). That is fine for sideloading; use your own key before publishing
-to the Play Store.
+## Make your own copy
+
+Everything personal lives outside the code: in **GitHub repository secrets** (signing key,
+Firebase config) and in **Cloudflare** (server password, Firebase key). To run your own Game
+Suite for you and your friends:
+
+1. **Fork** this repository on GitHub (or use it as a template).
+2. **Signing key** (so your releases can update your installed app): create one with
+   `keytool -genkeypair -keystore gamesuite.keystore -storetype PKCS12 -alias gamesuite
+   -keyalg RSA -keysize 4096 -validity 36500 -dname "CN=Game Suite"`, then add these
+   secrets under *Settings → Secrets and variables → Actions*:
+   - `SIGNING_KEYSTORE_BASE64`: the keystore file in base64 (`base64 -w0 gamesuite.keystore`)
+   - `SIGNING_STORE_PASSWORD` and `SIGNING_KEY_PASSWORD`: its password
+   - `SIGNING_KEY_ALIAS`: `gamesuite`
+
+   Keep the keystore file private and safe: losing it means your next version can't update
+   the installed app. Without these secrets CI still builds and tests, but publishes nothing.
+3. **Own app id (optional):** to install your copy next to someone else's Game Suite, add a
+   repository **variable** (*Variables* tab) `APP_ID`, e.g. `com.yourname.gamesuite`, and use
+   that id in Firebase.
+4. **Invitations (optional):** create your own Firebase project (*1c* above) and add its
+   `google-services.json` content as the `GOOGLE_SERVICES_JSON` secret.
+5. **Server:** deploy your own Cloudflare Worker (*1a*) or Google Script (*1b*).
+6. Push to your default branch: CI builds the app and publishes it to *your* releases. The
+   download button in your copy of this README and the app's updater use your repository.
 
 Requires Android 8.0 (API 26) or newer.
 
