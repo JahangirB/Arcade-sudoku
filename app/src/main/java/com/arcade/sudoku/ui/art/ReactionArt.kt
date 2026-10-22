@@ -218,7 +218,7 @@ private fun Pen.clap(p: Double) {
         stroke(rgb(0xc9d1da), 2) { moveTo(14, 46); quadTo(10, 56, 14, 66); moveTo(86, 46); quadTo(90, 56, 86, 66) }
     }
     val cf = seg(p, 0.78, 1.0)
-    val confetti = listOf(0xe8505b, 0x35bd88, 0x7b6cf0, 0xffb703, 0x5bb7f0)
+    val confetti = listOf(0xe8505bL, 0x35bd88L, 0x7b6cf0L, 0xffb703L, 0x5bb7f0L)
     if (cf > 0 && cf < 1) for (k in 0 until 10) {
         val a = -PI / 2 + (k - 4.5) * 0.3
         val r = 12 + cf * 36
