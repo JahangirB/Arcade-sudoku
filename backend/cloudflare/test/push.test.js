@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createPushSender, signJwt } from '../src/push.js';
+import { createPushSender, serviceAccountText, signJwt } from '../src/push.js';
 import { DirectoryError, pair, prepareMessage, register } from '../src/directory.js';
 
 async function serviceAccount() {
@@ -98,4 +98,12 @@ test('only partners can invite each other, and only registered phones', async ()
   await pair(store, A, C);
   await assert.rejects(prepareMessage(store, 'invite', { from: A, to: C, code: 'ABC123' }), (e) => e.reason === 'not_registered');
   await assert.rejects(register(store, { deviceId: 'bad id', token: TOKEN }, 1), DirectoryError);
+});
+
+test('the service account is found despite small naming slips', () => {
+  assert.equal(serviceAccountText({ FIREBASE_SERVICE_ACCOUNT: ' {"a":1}\n' }), '{"a":1}');
+  assert.equal(serviceAccountText({ firebase_service_account: '{}' }), '{}');
+  assert.equal(serviceAccountText({ 'FIREBASE SERVICE ACCOUNT': '{}' }), '{}');
+  assert.equal(serviceAccountText({ ROOMS: {} }), '');
+  assert.equal(serviceAccountText({ FIREBASE_SERVICE_ACCOUNT: {} }), '');
 });

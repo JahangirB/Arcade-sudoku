@@ -14,7 +14,7 @@
 
 import { DurableObject } from 'cloudflare:workers';
 import { DirectoryError, pair, prepareMessage, register } from './directory.js';
-import { createPushSender } from './push.js';
+import { createPushSender, serviceAccountText } from './push.js';
 import {
   GameError, checkTimers, createRoom, joinRoom, leave, nextDeadline, normalizeCode,
   fire, sendEmoji, setConnected, setReady, setShipsReady, submitBoard, view,
@@ -35,7 +35,7 @@ export default {
       return json({
         ok: true, serverTime: Date.now(), version: API_VERSION, kind: 'cloudflare',
         // Whether the Firebase key for invitations is set, to make setup easy to check.
-        invitations: !!env.FIREBASE_SERVICE_ACCOUNT,
+        invitations: !!serviceAccountText(env),
       });
     }
 
@@ -276,7 +276,7 @@ export class Directory extends DurableObject {
   async register(body) {
     try {
       await register(this.store, body || {}, Date.now());
-      return { ok: true, invitations: !!this.env.FIREBASE_SERVICE_ACCOUNT };
+      return { ok: true, invitations: !!serviceAccountText(this.env) };
     } catch (err) {
       return { ok: false, error: err.message, reason: err.reason || null };
     }
@@ -289,7 +289,7 @@ export class Directory extends DurableObject {
   /** Sends an invitation or a reply to the partner's phone. */
   async notify(kind, body) {
     try {
-      if (!this.env.FIREBASE_SERVICE_ACCOUNT) {
+      if (!serviceAccountText(this.env)) {
         throw new DirectoryError(
           'Invitations are not set up on this server: add the Firebase key as a Secret named ' +
             'FIREBASE_SERVICE_ACCOUNT under the Worker\'s Settings → Variables and Secrets.',
@@ -297,7 +297,7 @@ export class Directory extends DurableObject {
         );
       }
       const message = await prepareMessage(this.store, kind, body || {});
-      this.sender ??= createPushSender(JSON.parse(this.env.FIREBASE_SERVICE_ACCOUNT));
+      this.sender ??= createPushSender(JSON.parse(serviceAccountText(this.env)));
       const sent = await this.sender.send(message.token, message.data);
       if (sent.unregistered) {
         await this.store.delete(message.targetKey);

@@ -78,3 +78,15 @@ function base64url(input) {
   for (const b of bytes) binary += String.fromCharCode(b);
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
+
+/**
+ * The service account JSON text from the Worker's settings, or '' when it isn't set.
+ * Forgives the usual slips when adding it: a lowercase or spaced name, or stray whitespace.
+ */
+export function serviceAccountText(env) {
+  const key = Object.keys(env || {}).find(
+    (k) => k.replace(/[^a-z]/gi, '').toLowerCase() === 'firebaseserviceaccount',
+  );
+  const value = key ? env[key] : '';
+  return typeof value === 'string' ? value.trim() : '';
+}
