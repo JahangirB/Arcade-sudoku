@@ -58,6 +58,7 @@ fun GameScreen(state: BattleUiState, vm: BattleViewModel, onLeave: () -> Unit) {
     val opponent = room.opponent
     val playing = phase == RoomStatus.PLAYING
     val conflicts = board.conflicts()
+    val localNow = rememberTicker()
 
     Column(
         modifier = Modifier
@@ -90,19 +91,26 @@ fun GameScreen(state: BattleUiState, vm: BattleViewModel, onLeave: () -> Unit) {
                 label = "You",
                 percent = myPercent,
                 color = p.primary,
+                showAvatar = true,
+                avatar = room.me.avatar,
+                reaction = visibleReaction(state.myReaction, localNow),
                 // During a match only the filled share is known locally; the server reveals
                 // the solved share once it is over.
                 trailing = if (phase == RoomStatus.FINISHED) "$myPercent% solved" else "$myPercent% filled",
             )
             if (opponent != null) {
-                val lagging = playing && opponent.idleMs > OPPONENT_LAG_WARNING_MS
+                val lagging = playing && (opponent.online == false || opponent.idleMs > OPPONENT_LAG_WARNING_MS)
                 val oppPercent = opponent.progress ?: 0
                 ProgressRow(
                     label = opponent.name + if (lagging) " (connection lost?)" else "",
                     percent = oppPercent,
                     color = OpponentColor,
                     trailing = "$oppPercent% solved",
+                    showAvatar = true,
+                    avatar = opponent.avatar,
+                    reaction = visibleReaction(state.opponentReaction, localNow),
                 )
+                ReactionBar(onReact = vm::react)
             }
         }
 

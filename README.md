@@ -8,15 +8,19 @@
 
 <p align="center">Tap the button on your phone, open the downloaded file and allow installs from your browser or file manager when Android asks. Needs Android 8.0 or newer.</p>
 
-A Sudoku app for Android with two ways to play:
+A Sudoku app for Android with three ways to play:
 
 - **Solo:** classic Sudoku on your phone, six levels, no internet needed.
-- **Battle:** a two-player race. One player hosts a small Google Apps Script
-  "server" in their own Google account and shares the **script link** and a
-  **secret code**. In the lobby both players choose a level, and when both pick
-  the **same level** both phones get the **same puzzle** and the match **starts
-  at the same moment**. While you solve you see your opponent's progress as a
-  live percentage. The first player to solve the puzzle wins.
+- **Online battle:** a two-player race over the internet. One player hosts the battle
+  server in their own free account, either a **Google Apps Script** (easiest) or a
+  **Cloudflare Worker** (fastest), and shares the **server link** and a **secret code**.
+- **Nearby battle:** two phones in the same room connect directly over Bluetooth and
+  Wi‑Fi. No internet and no server.
+
+In every battle both players choose a level in the lobby; when both pick the **same
+level** both phones get the **same puzzle** and the match **starts at the same moment**.
+While you solve you see your opponent's progress as a live percentage, and you can send
+quick **reactions** (👍 👏 🔥 😂 😮 😅 🤔 😎 ❤️ ⏰). The first player to solve the puzzle wins.
 
 ## Solo play
 
@@ -35,8 +39,9 @@ clues you get. Every puzzle has exactly one solution.
 
 The **profile icon** (top right of the home screen) holds all setup:
 
-- your **name**
-- the **Google Script link** for battles (with *Paste invite* and *Test link*)
+- your **name** and **avatar** (🦊 🐱 🐶 🐼 🦉 🐸 🐯 🦄 🤖 👽 🦁 🐧), which your opponent sees
+- the **server link** for online battles (Google Script or Cloudflare), the **server
+  password** if the host set one, plus *Paste invite* and *Test link*
 - **appearance** (system, light or dark)
 - your **statistics** (wins and best time per level, battles won and lost)
 
@@ -46,7 +51,7 @@ The **profile icon** (top right of the home screen) holds all setup:
    type your own) and starts the lobby. In the lobby tap **Share link + code** and send
    the invite (WhatsApp, SMS, etc.).
 2. **Guest** copies the invite, opens *Battle a friend → Join* and taps *Paste the invite
-   message instead* (it fills in the link and code), then **Join battle**. The script link
+   message instead* (it fills in the link and code), then **Join battle**. The server link
    is saved in the profile, so you only do this once per host.
 3. **Both players choose a level in the lobby.** Tapping a level means "I'm ready for
    this level" (tap it again to cancel). You can see your opponent's pick. The game only
@@ -69,7 +74,80 @@ The **profile icon** (top right of the home screen) holds all setup:
 Leaving a running match counts as a loss. If a player stops syncing for 45
 seconds (app closed, no network), the opponent wins by timeout.
 
-## 1. Host setup: deploy the Google Script (about 3 minutes, free)
+## Nearby battles (same room, no internet)
+
+1. Both players open *Battle a friend → Nearby (no internet)*.
+2. One taps **Host nearby battle**; the other taps **Find nearby battles** and then **Join**
+   next to the host's name.
+3. Android asks once for the Bluetooth / nearby devices permissions (on Android 12 and
+   older also location, which Android requires for Bluetooth scanning).
+
+The host's phone runs the battle, so the rules, level matching, countdown and reactions
+work exactly like online. Keep Bluetooth on and the phones within a few metres. If the
+link drops, the guest's phone finds the host again by itself; 45 seconds away during a
+match counts as leaving. Nearby battles use Google Play services (on almost every Android
+phone).
+
+## Choosing a battle server
+
+| | Google Apps Script | Cloudflare Worker |
+|---|---|---|
+| Accounts | Google | Cloudflare (free, email only); GitHub for the one-click button |
+| Setup | Paste one file, deploy (≈3 min) | Deploy button (≈5 min) or command line (≈10 min) |
+| Speed | Moves show within 2–4 s (the app asks every few seconds) | Moves show instantly (live WebSocket connection) |
+| Rooms | Kept in the script cache (can rarely be lost) | Kept in a Durable Object per room |
+| Password | Not needed (the secret code protects each battle) | Optional `SERVER_PASSWORD` keeps strangers from opening rooms |
+| Match log | `Matches` sheet in your Google Sheet | Not kept |
+
+The app recognises the server from the link, so players just paste whatever link the
+host shares. Both servers follow the same rules.
+
+## 1a. Host setup: Cloudflare Worker (fast, free)
+
+**Accounts:** a free [Cloudflare](https://dash.cloudflare.com/sign-up) account (email only,
+no card on the free plan; going over the free limits makes requests fail until the next
+day, it doesn't bill you). For the one-click option also a free GitHub account.
+
+**Option A: deploy button.**
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/JahangirB/Arcade-sudoku/tree/ccr-d293cbfe-amy86v/backend/cloudflare)
+
+1. Sign up at Cloudflare and confirm your email. The first time, Cloudflare asks you to
+   pick a `workers.dev` subdomain (for example `jahangir`).
+2. Tap the button above, sign in, connect GitHub when asked and keep the project name
+   `arcade-sudoku`. Cloudflare copies the server into your GitHub and deploys it.
+3. You get a link like `https://arcade-sudoku.jahangir.workers.dev`. That is the
+   **server link**.
+
+**Option B: command line.** Install [Node.js](https://nodejs.org), download this
+repository, then:
+
+```bash
+cd backend/cloudflare
+npm install
+npx wrangler login     # opens the browser to approve
+npx wrangler deploy    # prints your server link
+```
+
+**Optional password (recommended).** Anyone with the link could open rooms on your
+server; a password keeps it to people you invite. In the Cloudflare dashboard open
+*Workers & Pages → arcade-sudoku → Settings → Variables and Secrets*, add a **Secret**
+named `SERVER_PASSWORD`, or run `npx wrangler secret put SERVER_PASSWORD`.
+
+**In the app:** *Profile → Battle server*: paste the link (and the password), tap
+**Test link**; it should say "Connected to the Cloudflare battle server". Then host a
+battle as usual. **Share link + code** puts the link, password and code in one message,
+and the guest's **Paste invite** fills in all three. Anyone who sees that message can
+also open rooms on your server, so send the password separately if that matters to you.
+
+**Updating the server:** with the button, open your copy on GitHub and press **Sync
+fork** (Cloudflare redeploys by itself); with the command line, download the new code and
+run `npx wrangler deploy` again.
+
+**Free limits** (check Cloudflare's pricing page, they change): around 100,000 requests a
+day; a battle is a few hundred small messages, so thousands of matches a day fit.
+
+## 1b. Host setup: Google Apps Script (easiest, free)
 
 1. Create a new Google Sheet (it will store a log of finished matches). Open
    **Extensions → Apps Script**.
@@ -127,11 +205,16 @@ Requires Android 8.0 (API 26) or newer.
 | --- | --- |
 | `backend/Code.gs` | Apps Script web app: rooms, puzzle generator, start sync, progress, winner |
 | `backend/test/` | Node tests that run `Code.gs` against mocked Apps Script services |
-| `app/src/main/java/com/arcade/sudoku/data/` | HTTP client for the script, response models, invite parsing |
+| `backend/cloudflare/` | Cloudflare Worker + Durable Object server (`src/room.js` has the rules), with unit and end-to-end tests |
+| `app/src/main/java/com/arcade/sudoku/data/` | Server clients (`BattleApi` for Apps Script, `CloudflareBattle`), response models, invites, profile, updater |
+| `app/src/main/java/com/arcade/sudoku/data/nearby/` | Nearby battles: `LocalRoom` (the rules, run on the host phone), `NearbyHost`, `NearbyGuest` |
 | `app/src/main/java/com/arcade/sudoku/game/` | Board, notes/undo, puzzle generator and the solo game rules |
 | `app/src/main/java/com/arcade/sudoku/ui/` | `BattleViewModel` (session, polling, clock sync), `SoloViewModel` and the Compose screens |
 
-## Server API
+## Server API (Apps Script)
+
+The Cloudflare server speaks the same room format over a WebSocket; its messages are
+described at the top of `backend/cloudflare/src/index.js`.
 
 Every call is `GET <script link>?action=…` and returns JSON with `ok` and
 `serverTime`. If something goes wrong you get `ok: false`, an `error` message,
@@ -144,6 +227,7 @@ and `fatal: true` when the room is gone.
 | `join` | `code`, `name`, optional `playerId` to reconnect | Guest joins; returns `playerId` |
 | `ready` | `code`, `playerId`, `difficulty`, `ready` | Marks the player ready for a level (`beginner`, `easy`, `medium`, `hard`, `expert`, `master`); `ready=false` cancels. A round starts in 5 s only when both players are ready with the same level (also used for rematches) |
 | `sync` | `code`, `playerId`, optional `board` (81 digits, `0` = empty), optional `v` (last room version seen) | Uploads the board, returns room state and opponent progress, or just `unchanged: true` when the room is still at version `v` |
+| `emoji` | `code`, `playerId`, `emoji` (`thumbsup`, `clap`, `fire`, `laugh`, `wow`, `sweat`, `think`, `cool`, `heart`, `hurry`) | Shows a reaction to the opponent (at most one per 1.5 s) |
 | `leave` | `code`, `playerId` | Leaves; forfeits a running match, a host leaving closes the room |
 
 ## How light the backend is
@@ -162,7 +246,11 @@ and `fatal: true` when the room is gone.
 ## Development
 
 ```bash
-node --test backend/test/*.test.js   # backend tests
-./gradlew testDebugUnitTest          # Kotlin unit tests
-./gradlew assembleDebug              # build the APK
+node --test backend/test/*.test.js           # Apps Script server tests
+cd backend/cloudflare && npm install
+npm test                                     # Cloudflare rules
+RUN_WORKER_TESTS=1 npm test                  # + a full battle against `wrangler dev`
+npx wrangler dev                             # run the Cloudflare server locally
+./gradlew testDebugUnitTest                  # Kotlin unit tests
+./gradlew assembleDebug                      # build the APK
 ```

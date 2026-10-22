@@ -20,6 +20,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Surface
+import com.arcade.sudoku.data.Avatar
 import com.arcade.sudoku.data.Difficulty
 import com.arcade.sudoku.data.Profile
 import com.arcade.sudoku.data.ThemeMode
@@ -27,6 +33,30 @@ import com.arcade.sudoku.ui.AppViewModel
 import com.arcade.sudoku.ui.BattleViewModel
 import com.arcade.sudoku.ui.UpdateUiState
 import com.arcade.sudoku.ui.theme.AppTheme
+
+/** The pictures players can choose; tapping the chosen one again clears it. */
+@Composable
+private fun AvatarPicker(selected: Avatar?, onPick: (Avatar?) -> Unit) {
+    val p = AppTheme.palette
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Avatar.entries.chunked(6).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                row.forEach { avatar ->
+                    val chosen = avatar == selected
+                    Surface(
+                        onClick = { onPick(if (chosen) null else avatar) },
+                        shape = CircleShape,
+                        color = if (chosen) p.primary.copy(alpha = 0.2f) else p.accent,
+                        border = if (chosen) BorderStroke(2.dp, p.primary) else null,
+                        modifier = Modifier.weight(1f).aspectRatio(1f),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) { Text(avatar.emoji, fontSize = 24.sp) }
+                    }
+                }
+            }
+        }
+    }
+}
 
 /** All setup lives here: name, battle server link, appearance, plus your statistics. */
 @Composable
@@ -54,7 +84,7 @@ fun ProfileScreen(
         ) {
             AppCard("Player") {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Avatar(profile.name.ifBlank { "?" }, p.primary, size = 52)
+                    PlayerAvatar(profile.name.ifBlank { "?" }, p.primary, size = 52, avatar = profile.avatar)
                     OutlinedTextField(
                         value = profile.name,
                         onValueChange = app::setName,
@@ -63,21 +93,32 @@ fun ProfileScreen(
                         modifier = Modifier.weight(1f),
                     )
                 }
+                Text("Avatar", color = p.muted, fontSize = 13.sp)
+                AvatarPicker(selected = profile.avatar, onPick = app::setAvatar)
             }
 
             AppCard("Battle server") {
                 Text(
-                    "To play a battle, one player hosts the game script in their Google account and shares " +
-                        "its link and a secret code. Paste the link here (or paste the whole invite).",
+                    "For online battles, one player hosts the battle server (a Google Script or a " +
+                        "Cloudflare Worker) and shares its link and a secret code. Paste the link here, " +
+                        "or paste the whole invite. Nearby battles need no server.",
                     color = p.muted,
                     fontSize = 13.sp,
                 )
                 OutlinedTextField(
                     value = profile.scriptUrl,
                     onValueChange = app::setScriptUrl,
-                    label = { Text("Google Script link") },
-                    placeholder = { Text("https://script.google.com/macros/s/…/exec") },
+                    label = { Text("Server link") },
+                    placeholder = { Text("https://…workers.dev or https://script.google.com/…") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = profile.serverPassword,
+                    onValueChange = app::setServerPassword,
+                    label = { Text("Server password (only if the host set one)") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {

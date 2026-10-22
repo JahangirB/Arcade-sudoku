@@ -54,6 +54,7 @@ fun BattleMenuScreen(
 ) {
     val p = AppTheme.palette
     var hosting by rememberSaveable { mutableStateOf(false) }
+    var nearby by rememberSaveable { mutableStateOf(false) }
     val clipboard = LocalClipboardManager.current
     val hasLink = profile.scriptUrl.startsWith("https://")
 
@@ -67,6 +68,15 @@ fun BattleMenuScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = !nearby, onClick = { nearby = false }, label = { Text("Online") })
+                FilterChip(selected = nearby, onClick = { nearby = true }, label = { Text("Nearby (no internet)") })
+            }
+
+            if (nearby) {
+                NearbySection(state, vm)
+            } else {
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = !hosting, onClick = { hosting = false }, label = { Text("Join") })
                 FilterChip(selected = hosting, onClick = { hosting = true }, label = { Text("Host") })
             }
@@ -74,7 +84,7 @@ fun BattleMenuScreen(
             if (hosting) {
                 AppCard("Host a battle") {
                     Text(
-                        "Share the script link and this secret code with your opponent. " +
+                        "Share the server link and this secret code with your opponent. " +
                             "You both choose the level in the lobby.",
                         color = p.muted,
                         fontSize = 13.sp,
@@ -126,7 +136,7 @@ fun BattleMenuScreen(
                     TextButton(onClick = onProfile) { Text("Change in profile", color = p.primary) }
                 } else {
                     Text(
-                        "No script link yet. Add the host's link in your profile, or paste the invite message.",
+                        "No server link yet. Add the host's link in your profile, or paste the invite message.",
                         color = p.bad,
                         fontSize = 14.sp,
                     )
@@ -140,6 +150,7 @@ fun BattleMenuScreen(
                 enabled = hasLink,
                 loading = state.busy,
             )
+            }
         }
     }
 }

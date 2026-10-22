@@ -1,6 +1,9 @@
 package com.arcade.sudoku.data
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
 import org.json.JSONException
 import org.json.JSONObject
@@ -17,28 +20,36 @@ class ApiException(message: String, val fatal: Boolean = false) : Exception(mess
  * Every call is a GET with query parameters: Apps Script answers with a redirect to
  * script.googleusercontent.com, which only works for GET requests.
  */
-class BattleApi(scriptUrl: String) {
+class BattleApi(scriptUrl: String) : BattleBackend {
     private val baseUrl = scriptUrl.trim()
 
-    suspend fun ping() = call("ping")
+    override val pushes: Flow<JSONObject>? = null
+    override val connected: StateFlow<Boolean> = MutableStateFlow(true)
 
-    suspend fun create(code: String, name: String) = call("create", "code" to code, "name" to name)
+    override suspend fun ping() = call("ping")
 
-    suspend fun join(code: String, name: String) = call("join", "code" to code, "name" to name)
+    override suspend fun create(code: String, name: String, avatar: Avatar?) =
+        call("create", "code" to code, "name" to name, "avatar" to avatar?.key)
+
+    override suspend fun join(code: String, name: String, avatar: Avatar?) =
+        call("join", "code" to code, "name" to name, "avatar" to avatar?.key)
 
     /** Marks the player ready for [difficulty], or not ready (difficulty is then ignored). */
-    suspend fun ready(code: String, playerId: String, ready: Boolean, difficulty: Difficulty?) =
+    override suspend fun ready(code: String, playerId: String, ready: Boolean, difficulty: Difficulty?) =
         call(
             "ready", "code" to code, "playerId" to playerId,
             "ready" to ready.toString(), "difficulty" to difficulty?.key,
         )
 
-    /** [version] is the last room version the app has; the server then may answer just "unchanged". */
-    suspend fun sync(code: String, playerId: String, board: String?, version: Int?) =
+    override suspend fun sync(code: String, playerId: String, board: String?, version: Int?) =
         call("sync", "code" to code, "playerId" to playerId, "board" to board, "v" to version?.toString())
 
-    suspend fun leave(code: String, playerId: String) =
+    override suspend fun emoji(code: String, playerId: String, reaction: Reaction) =
+        call("emoji", "code" to code, "playerId" to playerId, "emoji" to reaction.key)
+
+    override suspend fun leave(code: String, playerId: String) {
         call("leave", "code" to code, "playerId" to playerId)
+    }
 
     private suspend fun call(action: String, vararg params: Pair<String, String?>): JSONObject =
         withContext(Dispatchers.IO) {

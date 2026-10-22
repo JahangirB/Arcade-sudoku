@@ -4,12 +4,17 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.arcade.sudoku.data.ApiException
-import com.arcade.sudoku.data.BattleApi
+import com.arcade.sudoku.data.Avatar
+import com.arcade.sudoku.data.BattleBackend
 import com.arcade.sudoku.data.Difficulty
 import com.arcade.sudoku.data.Invite
 import com.arcade.sudoku.data.ProfileStore
+import com.arcade.sudoku.data.Reaction
 import com.arcade.sudoku.data.RoomState
 import com.arcade.sudoku.data.RoomStatus
+import com.arcade.sudoku.data.nearby.FoundHost
+import com.arcade.sudoku.data.nearby.NearbyGuest
+import com.arcade.sudoku.data.nearby.NearbyHost
 import com.arcade.sudoku.data.parseRoom
 import com.arcade.sudoku.game.BoardState
 import com.arcade.sudoku.game.Sudoku
@@ -32,11 +37,18 @@ import org.json.JSONObject
 import java.io.IOException
 import kotlin.coroutines.cancellation.CancellationException
 
+/** Online goes through the host's server; nearby connects two phones directly, no internet. */
+enum class BattleMode { ONLINE, NEARBY }
+
+/** A reaction on screen and when it appeared. */
+data class ShownReaction(val reaction: Reaction, val at: Long)
+
 data class BattleUiState(
     val hostCode: String = Invite.randomCode(),
     val joinCode: String = "",
     val busy: Boolean = false,
     val message: String? = null,
+    val mode: BattleMode = BattleMode.ONLINE,
     val room: RoomState? = null,
     val board: BoardState? = null,
     val selected: Int? = null,
@@ -44,6 +56,11 @@ data class BattleUiState(
     /** Server clock minus local clock, so both phones count down to the same instant. */
     val clockOffsetMs: Long = 0,
     val reconnecting: Boolean = false,
+    val opponentReaction: ShownReaction? = null,
+    val myReaction: ShownReaction? = null,
+    /** Nearby hosts found while looking for a game. */
+    val nearbyHosts: List<FoundHost> = emptyList(),
+    val scanning: Boolean = false,
 ) {
     /** Like the server status, but switches to PLAYING the moment the shared start time passes. */
     fun phase(serverNow: Long): RoomStatus? {
@@ -67,9 +84,9 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
     private val _state = MutableStateFlow(BattleUiState())
     val state: StateFlow<BattleUiState> = _state.asStateFlow()
 
-    private var api: BattleApi? = null
+    private var backend: BattleBackend? = null
     private var playerId: String? = null
-    private var pollJob: Job? = null
+    private var sessionJob: Job? = null
     private val syncNow = Channel<Unit>(Channel.CONFLATED)
     private var loadedRound = -1
     private var recordedRound = -1
@@ -79,7 +96,10 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
     private var lastVersion = -1
     /** When the opponent's progress last changed, to poll faster while they are active. */
     private var opponentActiveAt = 0L
+    private var lastOpponentEmojiSeq = -1
     private val foreground = MutableStateFlow(true)
+    private var nearbyGuest: NearbyGuest? = null
+    private var scanJob: Job? = null
 
     // --- Start screen -------------------------------------------------------------------------
 
@@ -88,57 +108,129 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
     fun setJoinCode(value: String) = _state.update { it.copy(joinCode = cleanCode(value)) }
     fun dismissMessage() = _state.update { it.copy(message = null) }
 
-    /** Fills in the script link (saved to the profile) and the secret code from a shared invite. */
+    /** Fills in the server link and password (saved to the profile) and the secret code from an invite. */
     fun pasteInvite(text: String?) {
         val invite = Invite.parse(text.orEmpty())
         if (invite.scriptUrl == null && invite.code == null) {
             showMessage("No invite found on the clipboard.")
             return
         }
-        invite.scriptUrl?.let(store::setScriptUrl)
+        invite.scriptUrl?.let {
+            store.setScriptUrl(it)
+            // A new server link comes with its own password, or none.
+            store.setServerPassword(invite.password.orEmpty())
+        }
         invite.code?.let { code -> _state.update { it.copy(joinCode = code) } }
     }
 
     fun testConnection() = runBusy {
         val url = checkedUrl() ?: return@runBusy
-        BattleApi(url).ping()
-        showMessage("Connected to the battle server.")
+        val server = BattleBackend.forUrl(url, store.profile.value.serverPassword)
+        try {
+            val kind = if (server.ping().optString("kind") == "cloudflare") "Cloudflare" else "Google Script"
+            showMessage("Connected to the $kind battle server.")
+        } finally {
+            server.close()
+        }
     }
 
     fun host() {
         val code = _state.value.hostCode
         if (code.length < 4) return showMessage("The secret code needs at least 4 letters or digits.")
-        startSession { api, name -> api.create(code, name) }
+        val url = checkedUrl() ?: return
+        startSession(BattleBackend.forUrl(url, store.profile.value.serverPassword), BattleMode.ONLINE) { b, name, avatar ->
+            b.create(code, name, avatar)
+        }
     }
 
     fun join() {
         val code = _state.value.joinCode
         if (code.length < 4) return showMessage("Enter the secret code from the host.")
-        startSession { api, name -> api.join(code, name) }
+        val url = checkedUrl() ?: return
+        startSession(BattleBackend.forUrl(url, store.profile.value.serverPassword), BattleMode.ONLINE) { b, name, avatar ->
+            b.join(code, name, avatar)
+        }
     }
 
-    private fun startSession(open: suspend (BattleApi, String) -> JSONObject) = runBusy {
-        val url = checkedUrl() ?: return@runBusy
-        val newApi = BattleApi(url)
+    // --- Nearby (offline) battles -------------------------------------------------------------
+
+    /** This phone becomes the battle server and waits for a nearby player to connect. */
+    fun hostNearby() {
+        stopScan()
+        val p = store.profile.value
+        val host = NearbyHost(getApplication(), displayName(p.name), p.avatar)
+        startSession(host, BattleMode.NEARBY) { b, name, avatar -> b.create(Invite.randomCode(4), name, avatar) }
+    }
+
+    /** Looks for phones hosting a nearby battle. */
+    fun startScan() {
+        if (scanJob?.isActive == true) return
+        val guest = nearbyGuest ?: NearbyGuest(getApplication()).also { nearbyGuest = it }
+        _state.update { it.copy(scanning = true, nearbyHosts = emptyList()) }
+        scanJob = viewModelScope.launch {
+            try {
+                guest.discover().collect { hosts -> _state.update { it.copy(nearbyHosts = hosts) } }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                showMessage(e.message ?: "Could not look for nearby players.")
+            } finally {
+                _state.update { it.copy(scanning = false) }
+            }
+        }
+    }
+
+    fun stopScan() {
+        scanJob?.cancel()
+        scanJob = null
+        _state.update { it.copy(scanning = false, nearbyHosts = emptyList()) }
+    }
+
+    fun joinNearby(host: FoundHost) {
+        val guest = nearbyGuest ?: return
+        scanJob?.cancel()
+        scanJob = null
+        nearbyGuest = null
+        startSession(guest, BattleMode.NEARBY) { b, name, avatar ->
+            (b as NearbyGuest).connectTo(host, name)
+            b.join(host.code, name, avatar)
+        }
+    }
+
+    // --- Sessions -----------------------------------------------------------------------------
+
+    private fun startSession(
+        newBackend: BattleBackend,
+        mode: BattleMode,
+        open: suspend (BattleBackend, String, Avatar?) -> JSONObject,
+    ) = runBusy {
+        val p = store.profile.value
         val sentAt = System.currentTimeMillis()
-        val json = open(newApi, store.profile.value.name.trim())
-        api = newApi
+        val json = try {
+            open(newBackend, displayName(p.name), p.avatar)
+        } catch (e: Exception) {
+            newBackend.close()
+            throw e
+        }
+        backend = newBackend
         playerId = json.getString("playerId")
         loadedRound = -1
         recordedRound = -1
         lastSentBoard = null
         bestRoundTripMs = Long.MAX_VALUE
         lastVersion = -1
+        lastOpponentEmojiSeq = -1
+        _state.update { it.copy(mode = mode, opponentReaction = null, myReaction = null) }
         val room = applyResponse(json, sentAt, record = false)
         // Joining a finished room must not count its old result again.
         if (room.status == RoomStatus.FINISHED) recordedRound = room.round
-        startPolling()
+        if (newBackend.pushes != null) startListening(newBackend) else startPolling()
     }
 
     private fun checkedUrl(): String? {
         val url = store.profile.value.scriptUrl
         if (!url.startsWith("https://")) {
-            showMessage("Add the host's script link in your profile (top-right icon).")
+            showMessage("Add the host's server link in your profile (top-right icon).")
             return null
         }
         return url
@@ -155,7 +247,25 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
         val id = playerId ?: return@runBusy
         val cancel = room.me.ready && room.me.difficulty == level
         val sentAt = System.currentTimeMillis()
-        applyResponse(requireApi().ready(room.code, id, !cancel, level), sentAt)
+        applyResponse(requireBackend().ready(room.code, id, !cancel, level), sentAt)
+    }
+
+    /** Sends a quick reaction; it shows next to your name on both phones. */
+    fun react(reaction: Reaction) {
+        val room = _state.value.room ?: return
+        val id = playerId ?: return
+        val b = backend ?: return
+        _state.update { it.copy(myReaction = ShownReaction(reaction, System.currentTimeMillis())) }
+        viewModelScope.launch {
+            try {
+                val sentAt = System.currentTimeMillis()
+                applyResponse(b.emoji(room.code, id, reaction), sentAt)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // A lost reaction is not worth an error message.
+            }
+        }
     }
 
     fun select(index: Int) = _state.update { it.copy(selected = if (it.selected == index) null else index) }
@@ -185,11 +295,14 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
     fun leave() {
         val room = _state.value.room
         val id = playerId
-        val oldApi = api
-        endSession(null)
-        if (room != null && id != null && oldApi != null) {
+        val old = backend
+        endSession(null, closeBackend = false)
+        if (old != null) {
             viewModelScope.launch {
-                withContext(NonCancellable) { runCatching { oldApi.leave(room.code, id) } }
+                withContext(NonCancellable) {
+                    if (room != null && id != null) runCatching { old.leave(room.code, id) }
+                    old.close()
+                }
             }
         }
     }
@@ -199,16 +312,39 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
         foreground.value = value
     }
 
+    /** Polling servers (Apps Script): ask for news every few seconds. */
     private fun startPolling() {
-        pollJob?.cancel()
-        pollJob = viewModelScope.launch {
+        sessionJob?.cancel()
+        sessionJob = viewModelScope.launch {
             while (isActive) {
                 val moved = withTimeoutOrNull(pollInterval()) { syncNow.receive() } != null
                 // Quick successive moves go out together in one call.
                 if (moved) delay(MOVE_BATCH_MS)
                 // Outside a match there is nothing to miss, so don't poll from the background.
                 if (!inMatch()) foreground.first { it }
-                syncOnce()
+                syncOnce(polling = true)
+            }
+        }
+    }
+
+    /** Live servers (Cloudflare, nearby phone): updates arrive by themselves; only send moves. */
+    private fun startListening(b: BattleBackend) {
+        sessionJob?.cancel()
+        sessionJob = viewModelScope.launch {
+            launch {
+                b.pushes?.collect { json ->
+                    if (json.optString("type") == "error") {
+                        if (json.optBoolean("fatal")) endSession(json.optString("error")) else showMessage(json.optString("error"))
+                    } else if (json.has("me")) {
+                        applyResponse(json, sentAt = null)
+                    }
+                }
+            }
+            launch { b.connected.collect { up -> _state.update { it.copy(reconnecting = !up) } } }
+            while (isActive) {
+                syncNow.receive()
+                delay(MOVE_BATCH_MS)
+                syncOnce(polling = false)
             }
         }
     }
@@ -230,23 +366,30 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private suspend fun syncOnce() {
+    private suspend fun syncOnce(polling: Boolean) {
         val s = _state.value
         val room = s.room ?: return
         val id = playerId ?: return
         val board = if (s.canEdit()) Sudoku.encode(s.board!!.cells).takeIf { it != lastSentBoard } else null
+        // A live server pushes news by itself, so there is only something to do with a new board.
+        if (!polling && board == null) return
         val sentAt = System.currentTimeMillis()
         try {
-            val json = requireApi().sync(room.code, id, board, lastVersion.takeIf { it >= 0 })
+            val json = requireBackend().sync(room.code, id, board, lastVersion.takeIf { it >= 0 && polling })
             if (json.optBoolean("unchanged")) {
                 // A stored board always changes the version, so "unchanged" means it was not stored.
                 applyUnchanged(json, sentAt)
             } else {
                 val updated = applyResponse(json, sentAt)
                 // The server ignores boards that arrive before its own clock reaches the start.
-                if (board != null && updated.status != RoomStatus.COUNTDOWN) lastSentBoard = board
+                if (board != null && updated.status != RoomStatus.COUNTDOWN) {
+                    lastSentBoard = board
+                } else if (board != null && !polling) {
+                    delay(EARLY_BOARD_RETRY_MS)
+                    syncNow.trySend(Unit)
+                }
             }
-            _state.update { it.copy(reconnecting = false) }
+            if (polling) _state.update { it.copy(reconnecting = false) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: ApiException) {
@@ -254,6 +397,8 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
         } catch (e: IOException) {
             _state.update { it.copy(reconnecting = true) }
             delay(1000)
+            // Try the move again once the connection is back.
+            if (!polling) syncNow.trySend(Unit)
         }
     }
 
@@ -278,15 +423,25 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun applyResponse(json: JSONObject, sentAt: Long, record: Boolean = true): RoomState {
+    /** [sentAt] is when the request went out; null for pushed updates, which can't time the clock. */
+    private fun applyResponse(json: JSONObject, sentAt: Long?, record: Boolean = true): RoomState {
         val room = parseRoom(json)
-        val offset = clockOffset(room.serverTime, sentAt)
+        val offset = sentAt?.let { clockOffset(room.serverTime, it) } ?: _state.value.clockOffsetMs
         lastVersion = json.optInt("version", -1)
         if (room.opponent?.progress != _state.value.room?.opponent?.progress) {
             opponentActiveAt = System.currentTimeMillis()
         }
+        // Show the opponent's reaction when a new one arrives (not old ones on first load).
+        val emoji = room.opponent?.emoji
+        val newReaction = if (emoji != null && lastOpponentEmojiSeq >= 0 && emoji.seq > lastOpponentEmojiSeq) {
+            ShownReaction(emoji.reaction, System.currentTimeMillis())
+        } else {
+            null
+        }
+        lastOpponentEmojiSeq = maxOf(lastOpponentEmojiSeq, emoji?.seq ?: 0)
         _state.update { s ->
             var next = s.copy(room = room, clockOffsetMs = offset)
+            if (newReaction != null) next = next.copy(opponentReaction = newReaction)
             val puzzle = room.puzzle
             if (puzzle != null && room.round != loadedRound) {
                 loadedRound = room.round
@@ -302,22 +457,23 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
         return room
     }
 
-    private fun endSession(message: String?) {
-        pollJob?.cancel()
-        pollJob = null
-        api = null
+    private fun endSession(message: String?, closeBackend: Boolean = true) {
+        sessionJob?.cancel()
+        sessionJob = null
+        if (closeBackend) backend?.close()
+        backend = null
         playerId = null
         loadedRound = -1
         lastVersion = -1
         _state.update {
             it.copy(
                 room = null, board = null, selected = null, notesMode = false, reconnecting = false,
-                message = message, hostCode = Invite.randomCode(),
+                message = message, hostCode = Invite.randomCode(), opponentReaction = null, myReaction = null,
             )
         }
     }
 
-    private fun requireApi() = api ?: throw ApiException("Not connected to a battle.", fatal = true)
+    private fun requireBackend() = backend ?: throw ApiException("Not connected to a battle.", fatal = true)
 
     private fun runBusy(block: suspend () -> Unit) {
         if (_state.value.busy) return
@@ -345,16 +501,23 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
         // The app is closing: tell the server so the opponent is not left waiting.
         val room = _state.value.room
         val id = playerId
-        val oldApi = api
-        if (room != null && id != null && oldApi != null) {
-            CoroutineScope(Dispatchers.IO).launch { runCatching { oldApi.leave(room.code, id) } }
+        val old = backend
+        nearbyGuest?.close()
+        if (old != null) {
+            CoroutineScope(Dispatchers.IO).launch {
+                if (room != null && id != null) runCatching { old.leave(room.code, id) }
+                old.close()
+            }
         }
     }
 
     private companion object {
         const val MOVE_BATCH_MS = 700L
         const val ACTIVE_WINDOW_MS = 15_000L
+        const val EARLY_BOARD_RETRY_MS = 500L
 
         fun cleanCode(value: String) = value.uppercase().filter { it in 'A'..'Z' || it in '0'..'9' }.take(12)
+
+        fun displayName(name: String) = name.trim().ifBlank { "Player" }
     }
 }

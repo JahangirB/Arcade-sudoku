@@ -91,7 +91,7 @@ fun ArcadeSudokuApp(
         Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
             when {
                 room != null && (room.status == RoomStatus.WAITING || room.status == RoomStatus.LOBBY) ->
-                    LobbyScreen(room, profile, battleState.busy, battle, onLeave = requestLeave)
+                    LobbyScreen(battleState, profile, battle, onLeave = requestLeave)
                 room != null -> GameScreen(battleState, battle, onLeave = requestLeave)
                 dest == Dest.SOLO -> SoloScreen(soloState, solo, onHome = { dest = Dest.HOME })
                 dest == Dest.PROFILE -> ProfileScreen(

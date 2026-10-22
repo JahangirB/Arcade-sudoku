@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -34,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.arcade.sudoku.data.Avatar
 import com.arcade.sudoku.data.Difficulty
 import com.arcade.sudoku.ui.theme.AppTheme
 
@@ -126,24 +128,57 @@ fun ScreenTopBar(title: String, onBack: () -> Unit, actions: @Composable RowScop
     }
 }
 
-/** A round badge with the player's first letter. */
+/** A round badge with the player's chosen picture, or their first letter if they have none. */
 @Composable
-fun Avatar(name: String, color: Color, size: Int = 40) {
+fun PlayerAvatar(name: String, color: Color, size: Int = 40, avatar: Avatar? = null) {
     Box(
         contentAlignment = Alignment.Center,
-        modifier = Modifier.size(size.dp).clip(CircleShape).background(color),
+        modifier = Modifier
+            .size(size.dp)
+            .clip(CircleShape)
+            .background(if (avatar != null) color.copy(alpha = 0.18f) else color),
     ) {
-        Text(
-            name.trim().firstOrNull()?.uppercase() ?: "?",
-            color = Color.White,
-            fontWeight = FontWeight.Bold,
-            fontSize = (size * 0.45f).sp,
-        )
+        if (avatar != null) {
+            Text(avatar.emoji, fontSize = (size * 0.55f).sp)
+        } else {
+            Text(
+                name.trim().firstOrNull()?.uppercase() ?: "?",
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                fontSize = (size * 0.45f).sp,
+            )
+        }
+    }
+}
+
+/**
+ * A player's progress bar. With [showAvatar] it starts with their picture; a [reaction]
+ * they just sent pops up at the end.
+ */
+@Composable
+fun ProgressRow(
+    label: String,
+    percent: Int,
+    color: Color,
+    trailing: String = "$percent%",
+    showAvatar: Boolean = false,
+    avatar: Avatar? = null,
+    reaction: String? = null,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        if (showAvatar) {
+            PlayerAvatar(label, color, size = 34, avatar = avatar)
+            Spacer(Modifier.width(10.dp))
+        }
+        Box(Modifier.weight(1f)) { ProgressBar(label, percent, color, trailing) }
+        if (reaction != null) {
+            Text(reaction, fontSize = 28.sp, modifier = Modifier.padding(start = 8.dp))
+        }
     }
 }
 
 @Composable
-fun ProgressRow(label: String, percent: Int, color: Color, trailing: String = "$percent%") {
+private fun ProgressBar(label: String, percent: Int, color: Color, trailing: String) {
     val p = AppTheme.palette
     Column(Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {

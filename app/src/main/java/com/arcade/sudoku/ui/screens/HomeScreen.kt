@@ -74,7 +74,12 @@ fun HomeScreen(
                     onClick = onProfile,
                     modifier = Modifier.size(44.dp).clip(CircleShape).background(p.accent),
                 ) {
-                    Icon(Icons.Filled.Person, contentDescription = "Profile", tint = p.primary)
+                    val avatar = profile.avatar
+                    if (avatar != null) {
+                        Text(avatar.emoji, fontSize = 22.sp)
+                    } else {
+                        Icon(Icons.Filled.Person, contentDescription = "Profile", tint = p.primary)
+                    }
                 }
             }
 

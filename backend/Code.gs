@@ -28,7 +28,7 @@ var LAST_SEEN_WRITE_MS = 10000;
 var DIFFICULTY_HOLES = { beginner: 30, easy: 38, medium: 46, hard: 50, expert: 54, master: 56 };
 var ROOM_PREFIX = 'room_';
 // Avatar and reaction keys the app can show; anything else is ignored. Must match the app.
-var AVATARS = ['fox', 'cat', 'dog', 'panda', 'owl', 'frog', 'tiger', 'unicorn', 'robot', 'alien', 'ninja', 'wizard'];
+var AVATARS = ['fox', 'cat', 'dog', 'panda', 'owl', 'frog', 'tiger', 'unicorn', 'robot', 'alien', 'lion', 'penguin'];
 var EMOJIS = ['thumbsup', 'clap', 'fire', 'laugh', 'wow', 'sweat', 'think', 'cool', 'heart', 'hurry'];
 var EMOJI_INTERVAL_MS = 1500;
 

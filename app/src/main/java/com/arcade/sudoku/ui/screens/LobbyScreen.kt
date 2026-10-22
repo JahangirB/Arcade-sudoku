@@ -39,15 +39,19 @@ import com.arcade.sudoku.data.Invite
 import com.arcade.sudoku.data.PlayerInfo
 import com.arcade.sudoku.data.Profile
 import com.arcade.sudoku.data.RoomState
+import com.arcade.sudoku.ui.BattleMode
+import com.arcade.sudoku.ui.BattleUiState
 import com.arcade.sudoku.ui.BattleViewModel
 import com.arcade.sudoku.ui.theme.AppTheme
 import com.arcade.sudoku.ui.theme.OpponentColor
 
 @Composable
-fun LobbyScreen(room: RoomState, profile: Profile, busy: Boolean, vm: BattleViewModel, onLeave: () -> Unit) {
+fun LobbyScreen(state: BattleUiState, profile: Profile, vm: BattleViewModel, onLeave: () -> Unit) {
     val p = AppTheme.palette
     val context = LocalContext.current
+    val room = state.room ?: return
     val opponent = room.opponent?.takeIf { !it.left }
+    val now = rememberTicker()
 
     Column(Modifier.fillMaxSize()) {
         ScreenTopBar("Battle lobby", onLeave)
@@ -58,7 +62,20 @@ fun LobbyScreen(room: RoomState, profile: Profile, busy: Boolean, vm: BattleView
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            AppCard("Secret code") {
+            if (state.mode == BattleMode.NEARBY) {
+                AppCard("Nearby battle") {
+                    Text(
+                        if (room.isHost) {
+                            "Your friend opens Battle a friend → Nearby, taps Find and picks your name. " +
+                                "Keep Bluetooth and Wi‑Fi on; no internet is needed."
+                        } else {
+                            "Connected directly to ${opponent?.name ?: "the host"}'s phone."
+                        },
+                        color = p.muted,
+                        fontSize = 14.sp,
+                    )
+                }
+            } else AppCard("Secret code") {
                 Text(
                     room.code,
                     color = p.primary,
@@ -75,7 +92,10 @@ fun LobbyScreen(room: RoomState, profile: Profile, busy: Boolean, vm: BattleView
                         onClick = {
                             val send = Intent(Intent.ACTION_SEND)
                                 .setType("text/plain")
-                                .putExtra(Intent.EXTRA_TEXT, Invite(profile.scriptUrl, room.code).toShareText())
+                                .putExtra(
+                                    Intent.EXTRA_TEXT,
+                                    Invite(profile.scriptUrl, room.code, profile.serverPassword).toShareText(),
+                                )
                             context.startActivity(Intent.createChooser(send, "Invite your opponent"))
                         },
                         modifier = Modifier.fillMaxWidth(),
@@ -88,9 +108,9 @@ fun LobbyScreen(room: RoomState, profile: Profile, busy: Boolean, vm: BattleView
             }
 
             AppCard("Players") {
-                PlayerRow(room.me, isMe = true, color = p.primary)
+                PlayerRow(room.me, isMe = true, color = p.primary, reaction = visibleReaction(state.myReaction, now))
                 if (opponent != null) {
-                    PlayerRow(opponent, isMe = false, color = OpponentColor)
+                    PlayerRow(opponent, isMe = false, color = OpponentColor, reaction = visibleReaction(state.opponentReaction, now))
                 } else {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = p.primary)
@@ -101,17 +121,18 @@ fun LobbyScreen(room: RoomState, profile: Profile, busy: Boolean, vm: BattleView
             }
 
             AppCard("Choose the level") {
-                LevelPicker(room, busy, onPick = vm::chooseLevel)
+                LevelPicker(room, state.busy, onPick = vm::chooseLevel)
             }
+            if (opponent != null) ReactionBar(onReact = vm::react)
         }
     }
 }
 
 @Composable
-private fun PlayerRow(player: PlayerInfo, isMe: Boolean, color: Color) {
+private fun PlayerRow(player: PlayerInfo, isMe: Boolean, color: Color, reaction: String?) {
     val p = AppTheme.palette
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-        Avatar(player.name, color)
+        PlayerAvatar(player.name, color, avatar = player.avatar)
         Spacer(Modifier.width(12.dp))
         Text(
             player.name + if (isMe) " (you)" else "",
@@ -119,10 +140,11 @@ private fun PlayerRow(player: PlayerInfo, isMe: Boolean, color: Color) {
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.weight(1f),
         )
-        if (player.ready && player.difficulty != null) {
-            Pill("Ready · ${player.difficulty.label}", p.good)
-        } else {
-            Pill("Choosing…", p.muted)
+        if (reaction != null) Text(reaction, fontSize = 24.sp, modifier = Modifier.padding(end = 8.dp))
+        when {
+            player.online == false -> Pill("Offline", p.bad)
+            player.ready && player.difficulty != null -> Pill("Ready · ${player.difficulty.label}", p.good)
+            else -> Pill("Choosing…", p.muted)
         }
     }
 }

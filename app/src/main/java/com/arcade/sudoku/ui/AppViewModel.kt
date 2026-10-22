@@ -2,6 +2,7 @@ package com.arcade.sudoku.ui
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
+import com.arcade.sudoku.data.Avatar
 import com.arcade.sudoku.data.Profile
 import com.arcade.sudoku.data.ProfileStore
 import com.arcade.sudoku.data.ThemeMode
@@ -15,5 +16,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setName(value: String) = store.setName(value)
     fun setScriptUrl(value: String) = store.setScriptUrl(value)
+    fun setServerPassword(value: String) = store.setServerPassword(value)
+    fun setAvatar(value: Avatar?) = store.setAvatar(value)
     fun setTheme(mode: ThemeMode) = store.setTheme(mode)
 }

@@ -23,7 +23,11 @@ data class Stats(
 /** Everything the player sets up in the profile screen, plus their win statistics. */
 data class Profile(
     val name: String = "",
+    val avatar: Avatar? = null,
+    /** The battle server: a Google Apps Script link or a Cloudflare Worker link. */
     val scriptUrl: String = "",
+    /** Only needed for a Cloudflare server whose host set a password. */
+    val serverPassword: String = "",
     val theme: ThemeMode = ThemeMode.SYSTEM,
     val stats: Stats = Stats(),
 )
@@ -37,6 +41,17 @@ class ProfileStore private constructor(private val prefs: SharedPreferences) {
         val name = value.take(MAX_NAME)
         prefs.edit { putString(KEY_NAME, name) }
         _profile.update { it.copy(name = name) }
+    }
+
+    fun setAvatar(value: Avatar?) {
+        prefs.edit { putString(KEY_AVATAR, value?.key) }
+        _profile.update { it.copy(avatar = value) }
+    }
+
+    fun setServerPassword(value: String) {
+        val password = value.trim()
+        prefs.edit { putString(KEY_PASSWORD, password) }
+        _profile.update { it.copy(serverPassword = password) }
     }
 
     fun setScriptUrl(value: String) {
@@ -83,7 +98,9 @@ class ProfileStore private constructor(private val prefs: SharedPreferences) {
         }
         return Profile(
             name = prefs.getString(KEY_NAME, "").orEmpty(),
+            avatar = Avatar.from(prefs.getString(KEY_AVATAR, null)),
             scriptUrl = prefs.getString(KEY_URL, "").orEmpty(),
+            serverPassword = prefs.getString(KEY_PASSWORD, "").orEmpty(),
             theme = runCatching { ThemeMode.valueOf(prefs.getString(KEY_THEME, "").orEmpty()) }
                 .getOrDefault(ThemeMode.SYSTEM),
             stats = Stats(solo, prefs.getInt(KEY_BATTLES_WON, 0), prefs.getInt(KEY_BATTLES_LOST, 0)),
@@ -96,6 +113,8 @@ class ProfileStore private constructor(private val prefs: SharedPreferences) {
         private const val KEY_URL = "script_url"
         private const val KEY_NAME = "player_name"
         private const val KEY_THEME = "theme"
+        private const val KEY_AVATAR = "avatar"
+        private const val KEY_PASSWORD = "server_password"
         private const val KEY_BATTLES_WON = "battles_won"
         private const val KEY_BATTLES_LOST = "battles_lost"
 

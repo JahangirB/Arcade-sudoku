@@ -23,8 +23,13 @@ enum class Difficulty(val key: String, val label: String, val holes: Int) {
     }
 }
 
+/** A player's latest reaction; [seq] goes up with every new one. */
+data class EmojiEvent(val reaction: Reaction, val seq: Int)
+
 data class PlayerInfo(
     val name: String,
+    val avatar: Avatar?,
+    val emoji: EmojiEvent?,
     val ready: Boolean,
     /** The level this player is ready for; null until they choose one. */
     val difficulty: Difficulty?,
@@ -33,6 +38,8 @@ data class PlayerInfo(
     val finishMs: Long?,
     val left: Boolean,
     val idleMs: Long,
+    /** Whether a live connection is up; null for the polling (Apps Script) server. */
+    val online: Boolean?,
 )
 
 data class RoomState(
@@ -74,12 +81,17 @@ fun parseRoom(json: JSONObject) = RoomState(
 
 private fun parsePlayer(json: JSONObject) = PlayerInfo(
     name = json.optString("name", "Player"),
+    avatar = Avatar.from(json.stringOrNull("avatar")),
+    emoji = json.optJSONObject("emoji")?.let { e ->
+        Reaction.from(e.optString("key"))?.let { EmojiEvent(it, e.optInt("seq")) }
+    },
     ready = json.optBoolean("ready"),
     difficulty = json.stringOrNull("difficulty")?.let { Difficulty.from(it) },
     progress = if (json.isNull("progress")) null else json.optInt("progress"),
     finishMs = json.longOrNull("finishMs"),
     left = json.optBoolean("left"),
     idleMs = json.optLong("idleMs"),
+    online = if (json.has("online")) json.optBoolean("online") else null,
 )
 
 private fun JSONObject.stringOrNull(key: String) = if (isNull(key)) null else getString(key)
