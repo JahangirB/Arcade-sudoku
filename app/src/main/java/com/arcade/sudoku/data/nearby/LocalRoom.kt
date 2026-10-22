@@ -3,6 +3,7 @@ package com.arcade.sudoku.data.nearby
 import com.arcade.sudoku.data.ApiException
 import com.arcade.sudoku.data.Avatar
 import com.arcade.sudoku.data.Difficulty
+import com.arcade.sudoku.data.GameKind
 import com.arcade.sudoku.data.Reaction
 import com.arcade.sudoku.game.Generator
 import org.json.JSONObject
@@ -17,6 +18,7 @@ class LocalRoom(
     val code: String,
     hostName: String,
     hostAvatar: Avatar?,
+    val game: GameKind = GameKind.SUDOKU,
     private val generate: (Int) -> Generator.Result = { Generator.generate(it) },
 ) {
     class Player(val id: String, val name: String, var avatar: Avatar?) {
@@ -50,11 +52,13 @@ class LocalRoom(
 
     /** Joins as guest, or reconnects when [playerId] belongs to the room. Returns the role. */
     fun join(name: String, avatar: Avatar?, playerId: String?): String {
-        if (status == "closed") throw ApiException("The host closed this battle.", fatal = true)
+        if (status == "closed") throw ApiException("The host closed this battle.", fatal = true, reason = "closed")
         players.entries.firstOrNull { it.value?.id == playerId && playerId != null }?.let { return it.key }
-        if (playerId != null) throw ApiException("You are not part of this battle.", fatal = true)
+        if (playerId != null) throw ApiException("You are not part of this battle.", fatal = true, reason = "not_member")
         val guest = players[GUEST]
-        if (guest != null && !guest.left) throw ApiException("This battle already has two players.", fatal = true)
+        if (guest != null && !guest.left) {
+            throw ApiException("This battle already has two players.", fatal = true, reason = "full")
+        }
         players[GUEST] = newPlayer(name, avatar)
         host.ready = false
         host.difficulty = null
@@ -191,6 +195,7 @@ class LocalRoom(
             .put("code", code)
             .put("version", version)
             .put("role", role)
+            .put("game", game.key)
             .put("status", shown)
             .put("difficulty", difficulty?.key ?: JSONObject.NULL)
             .put("round", round)

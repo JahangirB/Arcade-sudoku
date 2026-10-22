@@ -120,6 +120,8 @@ fun ArcadeSudokuApp(
                     },
                     onBattle = { dest = Dest.BATTLE },
                     onProfile = { dest = Dest.PROFILE },
+                    partnerBusy = battleState.busy,
+                    onPlayWithPartner = battle::playWithPartner,
                 )
             }
         }

@@ -2,6 +2,19 @@ package com.arcade.sudoku.data
 
 import org.json.JSONObject
 
+/** The games a battle room can hold. */
+enum class GameKind(val key: String, val label: String) {
+    SUDOKU("sudoku", "Sudoku"),
+    SHIPS("ships", "Ship Battle");
+
+    companion object {
+        fun from(key: String?) = entries.firstOrNull { it.key == key } ?: SUDOKU
+    }
+}
+
+/** Who this phone is when opening a room. [deviceId] stays the same for the app's lifetime. */
+data class Hello(val name: String, val avatar: Avatar?, val deviceId: String)
+
 enum class RoomStatus { WAITING, LOBBY, COUNTDOWN, PLAYING, FINISHED;
 
     companion object {
@@ -29,6 +42,8 @@ data class EmojiEvent(val reaction: Reaction, val seq: Int)
 data class PlayerInfo(
     val name: String,
     val avatar: Avatar?,
+    /** The other phone's permanent id, used to invite them again later (Cloudflare only). */
+    val deviceId: String?,
     val emoji: EmojiEvent?,
     val ready: Boolean,
     /** The level this player is ready for; null until they choose one. */
@@ -45,6 +60,7 @@ data class PlayerInfo(
 data class RoomState(
     val code: String,
     val role: String,
+    val game: GameKind,
     val status: RoomStatus,
     /** The level of the current or last round; null before the first round starts. */
     val difficulty: Difficulty?,
@@ -66,6 +82,7 @@ data class RoomState(
 fun parseRoom(json: JSONObject) = RoomState(
     code = json.getString("code"),
     role = json.getString("role"),
+    game = GameKind.from(json.stringOrNull("game")),
     status = RoomStatus.from(json.getString("status")),
     difficulty = json.stringOrNull("difficulty")?.let { Difficulty.from(it) },
     round = json.optInt("round"),
@@ -82,6 +99,7 @@ fun parseRoom(json: JSONObject) = RoomState(
 private fun parsePlayer(json: JSONObject) = PlayerInfo(
     name = json.optString("name", "Player"),
     avatar = Avatar.from(json.stringOrNull("avatar")),
+    deviceId = json.stringOrNull("deviceId"),
     emoji = json.optJSONObject("emoji")?.let { e ->
         Reaction.from(e.optString("key"))?.let { EmojiEvent(it, e.optInt("seq")) }
     },

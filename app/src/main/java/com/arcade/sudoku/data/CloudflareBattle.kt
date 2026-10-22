@@ -56,7 +56,7 @@ class CloudflareBattle(serverUrl: String, private val password: String) : Battle
     @Volatile private var closed = false
     private var retries = 0
 
-    private data class Session(val code: String, val name: String, val avatar: Avatar?, val playerId: String)
+    private data class Session(val code: String, val me: Hello, val playerId: String)
 
     override suspend fun ping(): JSONObject = withContext(Dispatchers.IO) {
         val url = base.newBuilder().addPathSegment("ping").addQueryParameter("password", password).build()
@@ -70,27 +70,34 @@ class CloudflareBattle(serverUrl: String, private val password: String) : Battle
         json
     }
 
-    override suspend fun create(code: String, name: String, avatar: Avatar?) = open(code, name, avatar, "create")
-    override suspend fun join(code: String, name: String, avatar: Avatar?) = open(code, name, avatar, "join")
+    override suspend fun create(code: String, me: Hello, game: GameKind) = open(code, me, "create", game, null)
+    override suspend fun join(code: String, me: Hello, playerId: String?) = open(code, me, "join", null, playerId)
 
-    private suspend fun open(code: String, name: String, avatar: Avatar?, action: String): JSONObject {
+    private suspend fun open(code: String, me: Hello, action: String, game: GameKind?, playerId: String?): JSONObject {
+        // A second attempt on the same object (join failed, now create) replaces the first socket.
+        socket?.let {
+            socket = null
+            it.close(1000, null)
+        }
         val opened = CompletableDeferred<JSONObject>()
         pending[OPEN] = opened
-        connect(code, name, avatar, action, playerId = null)
+        connect(code, me, action, game, playerId)
         val json = withTimeoutOrNull(OPEN_TIMEOUT_MS) { opened.await() }
             ?: throw IOException("The server did not answer.").also { pending.remove(OPEN) }
-        session = Session(code, name, avatar, json.getString("playerId"))
+        session = Session(code, me, json.getString("playerId"))
         return json
     }
 
-    private fun connect(code: String, name: String, avatar: Avatar?, action: String, playerId: String?) {
+    private fun connect(code: String, me: Hello, action: String, game: GameKind?, playerId: String?) {
         val url = base.newBuilder()
             .addPathSegment("room").addPathSegment(code)
             .addQueryParameter("action", action)
-            .addQueryParameter("name", name)
+            .addQueryParameter("name", me.name)
+            .addQueryParameter("deviceId", me.deviceId)
             .addQueryParameter("password", password)
             .apply {
-                avatar?.let { addQueryParameter("avatar", it.key) }
+                me.avatar?.let { addQueryParameter("avatar", it.key) }
+                game?.let { addQueryParameter("game", it.key) }
                 playerId?.let { addQueryParameter("playerId", it) }
             }
             .build()
@@ -153,7 +160,7 @@ class CloudflareBattle(serverUrl: String, private val password: String) : Battle
         retries++
         scope.launch {
             delay(wait)
-            if (!closed) connect(s.code, s.name, s.avatar, "join", s.playerId)
+            if (!closed) connect(s.code, s.me, "join", null, s.playerId)
         }
     }
 
@@ -174,7 +181,7 @@ class CloudflareBattle(serverUrl: String, private val password: String) : Battle
             when {
                 waiter == null -> _pushes.tryEmit(json)
                 json.optString("type") == "error" ->
-                    waiter.completeExceptionally(ApiException(json.optString("error"), json.optBoolean("fatal")))
+                    waiter.completeExceptionally(ApiException.from(json))
                 else -> waiter.complete(json)
             }
         }

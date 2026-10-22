@@ -5,6 +5,8 @@ import com.arcade.sudoku.data.ApiException
 import com.arcade.sudoku.data.Avatar
 import com.arcade.sudoku.data.BattleBackend
 import com.arcade.sudoku.data.Difficulty
+import com.arcade.sudoku.data.GameKind
+import com.arcade.sudoku.data.Hello
 import com.arcade.sudoku.data.Reaction
 import com.google.android.gms.nearby.Nearby
 import com.google.android.gms.nearby.connection.ConnectionInfo
@@ -58,7 +60,7 @@ class NearbyGuest(context: Context) : BattleBackend {
     private var closed = false
     private var reconnecting: Job? = null
 
-    private data class Session(val code: String, val name: String, val avatar: Avatar?, val playerId: String)
+    private data class Session(val code: String, val me: Hello, val playerId: String)
 
     /** Hosts currently advertising a battle nearby. Stops looking when collection stops. */
     fun discover(): Flow<List<FoundHost>> = callbackFlow {
@@ -97,12 +99,12 @@ class NearbyGuest(context: Context) : BattleBackend {
 
     override suspend fun ping() = JSONObject().put("ok", true)
 
-    override suspend fun create(code: String, name: String, avatar: Avatar?): JSONObject =
+    override suspend fun create(code: String, me: Hello, game: GameKind): JSONObject =
         throw UnsupportedOperationException("A nearby guest does not host")
 
-    override suspend fun join(code: String, name: String, avatar: Avatar?): JSONObject {
-        val json = request(open(name, avatar, playerId = null), OPEN)
-        session = Session(code, name, avatar, json.getString("playerId"))
+    override suspend fun join(code: String, me: Hello, playerId: String?): JSONObject {
+        val json = request(open(me.name, me.avatar, playerId), OPEN)
+        session = Session(code, me, json.getString("playerId"))
         return json
     }
 
@@ -184,7 +186,7 @@ class NearbyGuest(context: Context) : BattleBackend {
             when {
                 waiter == null -> _pushes.tryEmit(json)
                 json.optString("type") == "error" ->
-                    waiter.completeExceptionally(ApiException(json.optString("error"), json.optBoolean("fatal")))
+                    waiter.completeExceptionally(ApiException.from(json))
                 else -> waiter.complete(json)
             }
         }
@@ -204,8 +206,8 @@ class NearbyGuest(context: Context) : BattleBackend {
                         discover().first { hosts -> hosts.any { it.code == s.code } }.first { it.code == s.code }
                     }
                     if (host != null) {
-                        connectTo(host, s.name)
-                        client.sendPayload(host.endpointId, open(s.name, s.avatar, s.playerId).put("id", OPEN).toPayload())
+                        connectTo(host, s.me.name)
+                        client.sendPayload(host.endpointId, open(s.me.name, s.me.avatar, s.playerId).put("id", OPEN).toPayload())
                         return@launch
                     }
                 } catch (e: Exception) {

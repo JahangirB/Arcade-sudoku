@@ -39,7 +39,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.FilterChip
 import com.arcade.sudoku.data.Difficulty
+import com.arcade.sudoku.data.GameKind
+import com.arcade.sudoku.data.SavedPartner
+import com.arcade.sudoku.ui.theme.OpponentColor
 import com.arcade.sudoku.data.Profile
 import com.arcade.sudoku.ui.SoloUiState
 import com.arcade.sudoku.ui.theme.AppTheme
@@ -52,6 +57,8 @@ fun HomeScreen(
     onNewGame: (Difficulty) -> Unit,
     onBattle: () -> Unit,
     onProfile: () -> Unit,
+    partnerBusy: Boolean,
+    onPlayWithPartner: (GameKind) -> Unit,
 ) {
     val p = AppTheme.palette
     var pickingLevel by rememberSaveable { mutableStateOf(false) }
@@ -83,21 +90,28 @@ fun HomeScreen(
                 }
             }
 
-            Spacer(Modifier.height(36.dp))
+            Spacer(Modifier.height(20.dp))
             Logo()
-            Spacer(Modifier.height(16.dp))
-            Text("Sudoku", color = p.text, fontSize = 40.sp, fontWeight = FontWeight.Bold)
-            Text("Solo or head-to-head", color = p.muted, fontSize = 16.sp)
-            Spacer(Modifier.height(44.dp))
+            Spacer(Modifier.height(12.dp))
+            Text("Game Suite", color = p.text, fontSize = 36.sp, fontWeight = FontWeight.Bold)
+            Text("Play together, wherever you are", color = p.muted, fontSize = 15.sp)
+            Spacer(Modifier.height(24.dp))
 
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                val game = solo.game
-                if (solo.canContinue && game != null) {
-                    PrimaryButton("Continue  ·  ${game.difficulty.label}  ·  ${formatDuration(game.elapsedMs)}", onContinue)
-                    SecondaryButton("New Game", { pickingLevel = true })
-                } else {
-                    PrimaryButton("New Game", { pickingLevel = true })
+                profile.partner?.let { partner ->
+                    PartnerCard(partner, partnerBusy, onPlayWithPartner)
                 }
+
+                AppCard("Sudoku") {
+                    val game = solo.game
+                    if (solo.canContinue && game != null) {
+                        PrimaryButton("Continue  ·  ${game.difficulty.label}  ·  ${formatDuration(game.elapsedMs)}", onContinue)
+                        SecondaryButton("New game", { pickingLevel = true })
+                    } else {
+                        PrimaryButton("New game", { pickingLevel = true })
+                    }
+                }
+
                 SecondaryButton("Battle a friend", onBattle)
             }
         }
@@ -157,6 +171,29 @@ private fun LevelDialog(title: String, onDismiss: () -> Unit, onPick: (Difficult
         confirmButton = {},
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = p.primary) } },
     )
+}
+
+/** The last online partner: one tap reopens the same room on the same server. */
+@Composable
+private fun PartnerCard(partner: SavedPartner, busy: Boolean, onPlay: (GameKind) -> Unit) {
+    val p = AppTheme.palette
+    var game by rememberSaveable { mutableStateOf(GameKind.SUDOKU) }
+    AppCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            PlayerAvatar(partner.name, OpponentColor, size = 44, avatar = partner.avatar)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Play with ${partner.name}", color = p.text, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                Text("Code ${partner.code} · saved", color = p.muted, fontSize = 13.sp)
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            GameKind.entries.forEach { kind ->
+                FilterChip(selected = game == kind, onClick = { game = kind }, label = { Text(kind.label) })
+            }
+        }
+        PrimaryButton("Play ${game.label}", { onPlay(game) }, loading = busy)
+    }
 }
 
 /** The app mark: a blue tile with a 3x3 grid and two filled cells. */

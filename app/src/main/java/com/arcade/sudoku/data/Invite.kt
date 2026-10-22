@@ -5,7 +5,7 @@ import kotlin.random.Random
 /** The server link, optional server password and secret code the host shares with the opponent. */
 data class Invite(val scriptUrl: String?, val code: String?, val password: String? = null) {
     fun toShareText() = buildString {
-        append("Let's play a Sudoku Battle in Arcade Sudoku!\n")
+        append("Let's play in Game Suite!\n")
         append("Server link: $scriptUrl\n")
         if (!password.isNullOrBlank()) append("Server password: $password\n")
         append("Secret code: $code")

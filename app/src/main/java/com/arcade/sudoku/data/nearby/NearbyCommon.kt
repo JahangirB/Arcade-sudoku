@@ -37,6 +37,7 @@ internal suspend fun <T> Task<T>.awaitResult(): T = suspendCancellableCoroutine 
     addOnFailureListener { cont.resumeWithException(it) }
 }
 
-internal fun errorJson(re: String?, message: String?, fatal: Boolean): JSONObject = JSONObject()
+internal fun errorJson(re: String?, message: String?, fatal: Boolean, reason: String? = null): JSONObject = JSONObject()
     .put("type", "error").put("re", re ?: JSONObject.NULL)
     .put("error", message ?: "Something went wrong.").put("fatal", fatal)
+    .put("reason", reason ?: JSONObject.NULL)

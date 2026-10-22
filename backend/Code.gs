@@ -78,6 +78,8 @@ function handleRequest_(p) {
       error: (err && err.message) || String(err),
       // Fatal errors mean the room is gone for this player; the app returns to the start screen.
       fatal: !!(err && err.fatal),
+      // A stable code the app can act on: not_found, closed, not_member, full, code_taken.
+      reason: (err && err.reason) || null,
       serverTime: Date.now()
     };
   }
@@ -116,7 +118,7 @@ function createRoom_(p, now) {
 
   var existing = loadRoom_(code);
   if (existing && existing.status !== 'closed') {
-    throw new Error('That secret code is already in use. Pick another one.');
+    throw fatal_('That secret code is already in use. Pick another one.', 'code_taken');
   }
 
   var room = {
@@ -135,7 +137,7 @@ function createRoom_(p, now) {
     winner: null,
     endReason: null,
     emojiSeq: 0,
-    players: { host: newPlayer_(p.name, p.avatar), guest: null }
+    players: { host: newPlayer_(p.name, p.avatar, p.deviceId), guest: null }
   };
   saveRoom_(room, now);
   var view = view_(room, 'host', now);
@@ -155,10 +157,10 @@ function joinRoom_(p, now) {
     return rejoin;
   }
   if (room.players.guest && !room.players.guest.left) {
-    throw new Error('This battle already has two players.');
+    throw fatal_('This battle already has two players.', 'full');
   }
 
-  room.players.guest = newPlayer_(p.name, p.avatar);
+  room.players.guest = newPlayer_(p.name, p.avatar, p.deviceId);
   room.players.host.ready = false;
   room.players.host.difficulty = null;
   room.status = 'lobby';
@@ -321,10 +323,11 @@ function leave_(p, now) {
 // Room helpers
 // ---------------------------------------------------------------------------
 
-function newPlayer_(name, avatar) {
+function newPlayer_(name, avatar, deviceId) {
   return {
     id: Utilities.getUuid(),
     name: cleanName_(name),
+    deviceId: /^[A-Za-z0-9-]{8,64}$/.test(String(deviceId || '')) ? String(deviceId) : null,
     avatar: AVATARS.indexOf(avatar) >= 0 ? avatar : null,
     emoji: null,
     emojiAt: 0,
@@ -384,6 +387,8 @@ function view_(room, role, now) {
   var showPuzzle = status === 'countdown' || status === 'playing' || (status === 'finished' && room.round > 0);
   return {
     code: room.code,
+    // The Google Script server only hosts Sudoku battles.
+    game: 'sudoku',
     version: room.version || 0,
     role: role,
     status: status,
@@ -404,6 +409,7 @@ function playerView_(player, room, includeProgress) {
   return {
     name: player.name,
     avatar: player.avatar || null,
+    deviceId: player.deviceId || null,
     // Latest reaction; the app shows it when seq goes up.
     emoji: player.emoji || null,
     ready: player.ready,
@@ -427,13 +433,14 @@ function findRole_(room, playerId) {
 
 function requireRole_(room, playerId) {
   var role = findRole_(room, playerId);
-  if (!role) throw fatal_('You are not part of this battle.');
+  if (!role) throw fatal_('You are not part of this battle.', 'not_member');
   return role;
 }
 
-function fatal_(message) {
+function fatal_(message, reason) {
   var err = new Error(message);
   err.fatal = true;
+  err.reason = reason || null;
   return err;
 }
 
@@ -443,8 +450,8 @@ function otherRole_(role) {
 
 function requireRoom_(code) {
   var room = loadRoom_(normalizeCode_(code));
-  if (!room) throw fatal_('No battle found for that secret code.');
-  if (room.status === 'closed') throw fatal_('The host closed this battle.');
+  if (!room) throw fatal_('No battle found for that secret code.', 'not_found');
+  if (room.status === 'closed') throw fatal_('The host closed this battle.', 'closed');
   return room;
 }
 

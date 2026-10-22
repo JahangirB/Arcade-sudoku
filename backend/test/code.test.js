@@ -246,9 +246,12 @@ test('unknown rooms and players are fatal errors', () => {
   const missing = b.call({ action: 'sync', code: 'NOPE99', playerId: 'x' });
   assert.equal(missing.ok, false);
   assert.equal(missing.fatal, true);
+  assert.equal(missing.reason, 'not_found');
   b.call({ action: 'create', code: 'REAL1', name: 'A' });
-  assert.equal(b.call({ action: 'sync', code: 'REAL1', playerId: 'intruder' }).fatal, true);
-  assert.equal(b.call({ action: 'create', code: 'REAL1', name: 'B' }).fatal, false);
+  const intruder = b.call({ action: 'sync', code: 'REAL1', playerId: 'intruder' });
+  assert.equal(intruder.fatal, true);
+  assert.equal(intruder.reason, 'not_member');
+  assert.equal(b.call({ action: 'create', code: 'REAL1', name: 'B' }).reason, 'code_taken');
 });
 
 test('the round does not start until both players pick the same level', () => {

@@ -16,8 +16,10 @@ interface BattleBackend {
     val connected: StateFlow<Boolean>
 
     suspend fun ping(): JSONObject
-    suspend fun create(code: String, name: String, avatar: Avatar?): JSONObject
-    suspend fun join(code: String, name: String, avatar: Avatar?): JSONObject
+    suspend fun create(code: String, me: Hello, game: GameKind): JSONObject
+
+    /** Joins as a new player, or rejoins as [playerId] from an earlier session. */
+    suspend fun join(code: String, me: Hello, playerId: String? = null): JSONObject
     suspend fun ready(code: String, playerId: String, ready: Boolean, difficulty: Difficulty?): JSONObject
 
     /** Uploads [board] if given; [version] lets a polling server answer just "unchanged". */

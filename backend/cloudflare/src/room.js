@@ -21,18 +21,24 @@ export const LOBBY_ABANDON_MS = 5 * 60_000;
 export const ROOM_IDLE_MS = 6 * 60 * 60_000;
 const CLOSED_ROOM_MS = 60_000;
 
+export const GAMES = ['sudoku', 'ships'];
+
 export class GameError extends Error {
-  constructor(message, fatal = false) {
+  /**
+   * `fatal`: the room is gone for this player; the app returns to the start screen.
+   * `reason`: a stable code the app can act on (not_found, closed, not_member, full, code_taken).
+   */
+  constructor(message, fatal = false, reason = null) {
     super(message);
-    // Fatal: the room is gone for this player; the app returns to the start screen.
     this.fatal = fatal;
+    this.reason = reason;
   }
 }
 
 export function normalizeCode(code) {
   const clean = String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
   if (clean.length < 4 || clean.length > 12) {
-    throw new GameError('The secret code must be 4 to 12 letters or digits.', true);
+    throw new GameError('The secret code must be 4 to 12 letters or digits.', true, 'bad_code');
   }
   return clean;
 }
@@ -45,18 +51,23 @@ export function cleanAvatar(avatar) {
   return AVATARS.includes(avatar) ? avatar : null;
 }
 
-function newPlayer(name, avatar, now, uuid) {
+/** The phone's permanent id (used for invitations); anything odd is dropped. */
+export function cleanDeviceId(deviceId) {
+  return /^[A-Za-z0-9-]{8,64}$/.test(String(deviceId || '')) ? String(deviceId) : null;
+}
+
+function newPlayer(name, avatar, now, uuid, deviceId = null) {
   return {
-    id: uuid(), name: cleanName(name), avatar: cleanAvatar(avatar), emoji: null, emojiAt: 0, ready: false, difficulty: null, board: null,
+    id: uuid(), name: cleanName(name), avatar: cleanAvatar(avatar), deviceId: cleanDeviceId(deviceId), emoji: null, emojiAt: 0, ready: false, difficulty: null, board: null,
     progress: 0, finishedAt: null, left: false, connected: false, awaySince: now,
   };
 }
 
-export function createRoom(code, hostName, now, uuid, avatar = null) {
+export function createRoom(code, hostName, now, uuid, avatar = null, deviceId = null, game = 'sudoku') {
   return {
-    code, createdAt: now, version: 0, emojiSeq: 0, difficulty: null, status: 'waiting', round: 0,
+    code, game: GAMES.includes(game) ? game : 'sudoku', createdAt: now, version: 0, emojiSeq: 0, difficulty: null, status: 'waiting', round: 0,
     puzzle: null, solution: null, startAt: null, winner: null, endReason: null,
-    players: { host: newPlayer(hostName, avatar, now, uuid), guest: null },
+    players: { host: newPlayer(hostName, avatar, now, uuid, deviceId), guest: null },
   };
 }
 
@@ -73,15 +84,19 @@ export function findRole(room, playerId) {
 }
 
 /** Joins as guest, or reconnects when `playerId` belongs to the room. Returns the role. */
-export function joinRoom(room, name, playerId, now, uuid, avatar = null) {
-  if (room.status === 'closed') throw new GameError('The host closed this battle.', true);
+export function joinRoom(room, name, playerId, now, uuid, avatar = null, deviceId = null) {
+  if (room.status === 'closed') throw new GameError('The host closed this battle.', true, 'closed');
   const known = findRole(room, playerId);
-  if (known) return known;
-  if (playerId) throw new GameError('You are not part of this battle.', true);
-  if (room.players.guest && !room.players.guest.left) {
-    throw new GameError('This battle already has two players.', true);
+  if (known) {
+    const id = cleanDeviceId(deviceId);
+    if (id) room.players[known].deviceId = id;
+    return known;
   }
-  room.players.guest = newPlayer(name, avatar, now, uuid);
+  if (playerId) throw new GameError('You are not part of this battle.', true, 'not_member');
+  if (room.players.guest && !room.players.guest.left) {
+    throw new GameError('This battle already has two players.', true, 'full');
+  }
+  room.players.guest = newPlayer(name, avatar, now, uuid, deviceId);
   room.players.host.ready = false;
   room.players.host.difficulty = null;
   room.status = 'lobby';
@@ -286,6 +301,7 @@ export function view(room, role, now) {
   const showPuzzle = status === 'countdown' || status === 'playing' || (status === 'finished' && room.round > 0);
   return {
     code: room.code,
+    game: room.game || 'sudoku',
     version: room.version,
     role,
     status,
@@ -305,6 +321,7 @@ function playerView(player, room, includeProgress, now) {
   return {
     name: player.name,
     avatar: player.avatar || null,
+    deviceId: player.deviceId || null,
     // Latest reaction; the app shows it when seq goes up.
     emoji: player.emoji || null,
     ready: player.ready,

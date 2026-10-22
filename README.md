@@ -1,14 +1,14 @@
-# Arcade Sudoku
+# Game Suite
 
 <p align="center">
-  <a href="https://github.com/JahangirB/Arcade-sudoku/releases/latest/download/ArcadeSudoku.apk">
+  <a href="https://github.com/JahangirB/Arcade-sudoku/releases/latest/download/GameSuite.apk">
     <img alt="Download the Android app" src="https://img.shields.io/badge/%E2%AC%87%20Download-Android%20APK-0072E3?style=for-the-badge&logo=android&logoColor=white">
   </a>
 </p>
 
 <p align="center">Tap the button on your phone, open the downloaded file and allow installs from your browser or file manager when Android asks. Needs Android 8.0 or newer.</p>
 
-A Sudoku app for Android with three ways to play:
+Game Suite (formerly Arcade Sudoku) is an Android app for playing together with someone far away. Sudoku has three ways to play:
 
 - **Solo:** classic Sudoku on your phone, six levels, no internet needed.
 - **Online battle:** a two-player race over the internet. One player hosts the battle

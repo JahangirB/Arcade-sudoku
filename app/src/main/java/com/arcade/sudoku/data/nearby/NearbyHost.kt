@@ -5,6 +5,8 @@ import com.arcade.sudoku.data.ApiException
 import com.arcade.sudoku.data.Avatar
 import com.arcade.sudoku.data.BattleBackend
 import com.arcade.sudoku.data.Difficulty
+import com.arcade.sudoku.data.GameKind
+import com.arcade.sudoku.data.Hello
 import com.arcade.sudoku.data.Reaction
 import com.google.android.gms.nearby.Nearby
 import com.google.android.gms.nearby.connection.AdvertisingOptions
@@ -51,8 +53,8 @@ class NearbyHost(context: Context, private val hostName: String, private val hos
 
     override suspend fun ping() = JSONObject().put("ok", true)
 
-    override suspend fun create(code: String, name: String, avatar: Avatar?): JSONObject = withContext(Dispatchers.Main.immediate) {
-        val r = LocalRoom(code, name, avatar)
+    override suspend fun create(code: String, me: Hello, game: GameKind): JSONObject = withContext(Dispatchers.Main.immediate) {
+        val r = LocalRoom(code, me.name, me.avatar, game)
         room = r
         startAdvertising()
         timers = scope.launch {
@@ -64,7 +66,7 @@ class NearbyHost(context: Context, private val hostName: String, private val hos
         r.view(LocalRoom.HOST, now()).put("playerId", r.playerId(LocalRoom.HOST))
     }
 
-    override suspend fun join(code: String, name: String, avatar: Avatar?): JSONObject =
+    override suspend fun join(code: String, me: Hello, playerId: String?): JSONObject =
         throw UnsupportedOperationException("The host does not join")
 
     override suspend fun ready(code: String, playerId: String, ready: Boolean, difficulty: Difficulty?) =
@@ -187,7 +189,7 @@ class NearbyHost(context: Context, private val hostName: String, private val hos
             send(endpointId, r.view(LocalRoom.GUEST, now).put("re", id))
             pushHost()
         } catch (e: ApiException) {
-            send(endpointId, errorJson(id ?: if (msg.optString("type") == "open") "open" else null, e.message, e.fatal))
+            send(endpointId, errorJson(id ?: if (msg.optString("type") == "open") "open" else null, e.message, e.fatal, e.reason))
         }
     }
 

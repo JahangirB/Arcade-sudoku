@@ -78,13 +78,19 @@ export class Room extends DurableObject {
       let role;
       if (params.get('action') === 'create') {
         if (this.room && this.room.status !== 'closed') {
-          throw new GameError('That secret code is already in use. Pick another one.', true);
+          throw new GameError('That secret code is already in use. Pick another one.', true, 'code_taken');
         }
-        this.room = createRoom(code, params.get('name'), now, () => crypto.randomUUID(), params.get('avatar'));
+        this.room = createRoom(
+          code, params.get('name'), now, () => crypto.randomUUID(),
+          params.get('avatar'), params.get('deviceId'), params.get('game'),
+        );
         role = 'host';
       } else {
-        if (!this.room) throw new GameError('No battle found for that secret code.', true);
-        role = joinRoom(this.room, params.get('name'), params.get('playerId'), now, () => crypto.randomUUID(), params.get('avatar'));
+        if (!this.room) throw new GameError('No battle found for that secret code.', true, 'not_found');
+        role = joinRoom(
+          this.room, params.get('name'), params.get('playerId'), now, () => crypto.randomUUID(),
+          params.get('avatar'), params.get('deviceId'),
+        );
       }
 
       // A reconnecting player replaces their old connection.
@@ -100,7 +106,7 @@ export class Room extends DurableObject {
       this.send(server, role, { re: 'open', playerId: this.room.players[role].id });
       this.broadcast(server);
     } catch (err) {
-      server.send(JSON.stringify({ type: 'error', re: 'open', error: err.message, fatal: true }));
+      server.send(JSON.stringify({ type: 'error', re: 'open', error: err.message, fatal: true, reason: err.reason || null }));
       safeClose(server, 4001, 'Could not open the battle');
     }
     return new Response(null, { status: 101, webSocket: client });
@@ -118,7 +124,7 @@ export class Room extends DurableObject {
     try {
       await this.load();
       if (!this.room || !role || this.room.status === 'closed') {
-        throw new GameError('The host closed this battle.', true);
+        throw new GameError('The host closed this battle.', true, 'closed');
       }
       switch (msg.type) {
         case 'ready':
@@ -148,7 +154,7 @@ export class Room extends DurableObject {
       this.send(ws, role, { re: msg.id });
       this.broadcast(ws);
     } catch (err) {
-      ws.send(JSON.stringify({ type: 'error', re: msg.id, error: err.message, fatal: !!err.fatal }));
+      ws.send(JSON.stringify({ type: 'error', re: msg.id, error: err.message, fatal: !!err.fatal, reason: err.reason || null }));
     }
   }
 
@@ -203,7 +209,7 @@ export class Room extends DurableObject {
       if (ws === skip || !role) continue;
       if (this.room.status === 'closed') {
         try {
-          ws.send(JSON.stringify({ type: 'error', error: 'The host closed this battle.', fatal: true }));
+          ws.send(JSON.stringify({ type: 'error', error: 'The host closed this battle.', fatal: true, reason: 'closed' }));
         } catch {
           // Already gone.
         }

@@ -4,9 +4,11 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.arcade.sudoku.data.ApiException
-import com.arcade.sudoku.data.Avatar
 import com.arcade.sudoku.data.BattleBackend
 import com.arcade.sudoku.data.Difficulty
+import com.arcade.sudoku.data.GameKind
+import com.arcade.sudoku.data.Hello
+import com.arcade.sudoku.data.SavedPartner
 import com.arcade.sudoku.data.Invite
 import com.arcade.sudoku.data.ProfileStore
 import com.arcade.sudoku.data.Reaction
@@ -49,6 +51,8 @@ data class BattleUiState(
     val busy: Boolean = false,
     val message: String? = null,
     val mode: BattleMode = BattleMode.ONLINE,
+    /** The game to open when hosting. */
+    val hostGame: GameKind = GameKind.SUDOKU,
     val room: RoomState? = null,
     val board: BoardState? = null,
     val selected: Int? = null,
@@ -81,7 +85,12 @@ data class BattleUiState(
 class BattleViewModel(app: Application) : AndroidViewModel(app) {
     private val store = ProfileStore.get(app)
 
-    private val _state = MutableStateFlow(BattleUiState())
+    private val _state = MutableStateFlow(
+        // The last partner's code stays filled in, so reconnecting needs no typing.
+        store.profile.value.partner.let { partner ->
+            BattleUiState(hostCode = partner?.code ?: Invite.randomCode(), joinCode = partner?.code.orEmpty())
+        },
+    )
     val state: StateFlow<BattleUiState> = _state.asStateFlow()
 
     private var backend: BattleBackend? = null
@@ -100,6 +109,8 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
     private val foreground = MutableStateFlow(true)
     private var nearbyGuest: NearbyGuest? = null
     private var scanJob: Job? = null
+    /** The server of the current online session, remembered with the partner. */
+    private var sessionServer: Pair<String, String>? = null
 
     // --- Start screen -------------------------------------------------------------------------
 
@@ -107,6 +118,7 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
     fun newHostCode() = _state.update { it.copy(hostCode = Invite.randomCode()) }
     fun setJoinCode(value: String) = _state.update { it.copy(joinCode = cleanCode(value)) }
     fun dismissMessage() = _state.update { it.copy(message = null) }
+    fun setHostGame(game: GameKind) = _state.update { it.copy(hostGame = game) }
 
     /** Fills in the server link and password (saved to the profile) and the secret code from an invite. */
     fun pasteInvite(text: String?) {
@@ -138,18 +150,68 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
         val code = _state.value.hostCode
         if (code.length < 4) return showMessage("The secret code needs at least 4 letters or digits.")
         val url = checkedUrl() ?: return
-        startSession(BattleBackend.forUrl(url, store.profile.value.serverPassword), BattleMode.ONLINE) { b, name, avatar ->
-            b.create(code, name, avatar)
+        val game = _state.value.hostGame
+        if (game != GameKind.SUDOKU && BattleBackend.isAppsScript(url)) {
+            return showMessage("${game.label} needs a Cloudflare server or a nearby battle.")
         }
+        startOnline(url) { b, me -> b.create(code, me, game) }
     }
 
     fun join() {
         val code = _state.value.joinCode
         if (code.length < 4) return showMessage("Enter the secret code from the host.")
         val url = checkedUrl() ?: return
-        startSession(BattleBackend.forUrl(url, store.profile.value.serverPassword), BattleMode.ONLINE) { b, name, avatar ->
-            b.join(code, name, avatar)
+        startOnline(url) { b, me -> b.join(code, me) }
+    }
+
+    /**
+     * One tap to play with the last partner: same server, same secret code. Whoever taps
+     * first opens the room and the other joins it; an old room is simply rejoined.
+     */
+    fun playWithPartner(game: GameKind = _state.value.hostGame) {
+        val partner = store.profile.value.partner ?: return
+        if (game != GameKind.SUDOKU && BattleBackend.isAppsScript(partner.serverUrl)) {
+            return showMessage("${game.label} needs a Cloudflare server or a nearby battle.")
         }
+        store.setScriptUrl(partner.serverUrl)
+        store.setServerPassword(partner.password)
+        _state.update { it.copy(joinCode = partner.code, hostCode = partner.code, hostGame = game) }
+        startOnline(partner.serverUrl, partner.password) { b, me ->
+            openPartnerRoom(b, partner.code, me, partner.myPlayerId, game)
+        }
+    }
+
+    private suspend fun openPartnerRoom(b: BattleBackend, code: String, me: Hello, playerId: String?, game: GameKind): JSONObject {
+        var id = playerId
+        repeat(3) {
+            try {
+                return b.join(code, me, id)
+            } catch (e: ApiException) {
+                when (e.reason) {
+                    // A new room under the same code: join it as a new player.
+                    "not_member" -> {
+                        id = null
+                        return@repeat
+                    }
+                    // Nobody is there: open it below.
+                    "not_found", "closed" -> Unit
+                    else -> throw e
+                }
+            }
+            try {
+                return b.create(code, me, game)
+            } catch (e: ApiException) {
+                // The partner opened it a moment ago: join it on the next round.
+                if (e.reason != "code_taken") throw e
+            }
+        }
+        throw ApiException("Could not reach your partner's battle. Try again.")
+    }
+
+    fun forgetPartner() = store.setPartner(null)
+
+    private fun startOnline(url: String, password: String = store.profile.value.serverPassword, open: suspend (BattleBackend, Hello) -> JSONObject) {
+        startSession(BattleBackend.forUrl(url, password), BattleMode.ONLINE, server = url to password, open = open)
     }
 
     // --- Nearby (offline) battles -------------------------------------------------------------
@@ -159,7 +221,8 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
         stopScan()
         val p = store.profile.value
         val host = NearbyHost(getApplication(), displayName(p.name), p.avatar)
-        startSession(host, BattleMode.NEARBY) { b, name, avatar -> b.create(Invite.randomCode(4), name, avatar) }
+        val game = _state.value.hostGame
+        startSession(host, BattleMode.NEARBY) { b, me -> b.create(Invite.randomCode(4), me, game) }
     }
 
     /** Looks for phones hosting a nearby battle. */
@@ -191,9 +254,9 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
         scanJob?.cancel()
         scanJob = null
         nearbyGuest = null
-        startSession(guest, BattleMode.NEARBY) { b, name, avatar ->
-            (b as NearbyGuest).connectTo(host, name)
-            b.join(host.code, name, avatar)
+        startSession(guest, BattleMode.NEARBY) { b, me ->
+            (b as NearbyGuest).connectTo(host, me.name)
+            b.join(host.code, me)
         }
     }
 
@@ -202,17 +265,19 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
     private fun startSession(
         newBackend: BattleBackend,
         mode: BattleMode,
-        open: suspend (BattleBackend, String, Avatar?) -> JSONObject,
+        server: Pair<String, String>? = null,
+        open: suspend (BattleBackend, Hello) -> JSONObject,
     ) = runBusy {
         val p = store.profile.value
         val sentAt = System.currentTimeMillis()
         val json = try {
-            open(newBackend, displayName(p.name), p.avatar)
+            open(newBackend, Hello(displayName(p.name), p.avatar, p.deviceId))
         } catch (e: Exception) {
             newBackend.close()
             throw e
         }
         backend = newBackend
+        sessionServer = server
         playerId = json.getString("playerId")
         loadedRound = -1
         recordedRound = -1
@@ -450,11 +515,29 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
             }
             next
         }
+        rememberPartner(room)
         if (record && room.status == RoomStatus.FINISHED && room.winner != null && room.round != recordedRound) {
             recordedRound = room.round
             store.recordBattle(won = room.winner == "me")
         }
         return room
+    }
+
+    /** Saves an online opponent so the next game is one tap away. */
+    private fun rememberPartner(room: RoomState) {
+        val (url, password) = sessionServer ?: return
+        val opponent = room.opponent?.takeIf { !it.left } ?: return
+        val old = store.profile.value.partner
+        val partner = SavedPartner(
+            serverUrl = url,
+            password = password,
+            code = room.code,
+            name = opponent.name,
+            avatar = opponent.avatar,
+            deviceId = opponent.deviceId ?: old?.takeIf { it.name == opponent.name }?.deviceId,
+            myPlayerId = playerId,
+        )
+        if (partner != old) store.setPartner(partner)
     }
 
     private fun endSession(message: String?, closeBackend: Boolean = true) {
@@ -463,12 +546,14 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
         if (closeBackend) backend?.close()
         backend = null
         playerId = null
+        sessionServer = null
         loadedRound = -1
         lastVersion = -1
         _state.update {
             it.copy(
                 room = null, board = null, selected = null, notesMode = false, reconnecting = false,
-                message = message, hostCode = Invite.randomCode(), opponentReaction = null, myReaction = null,
+                message = message, opponentReaction = null, myReaction = null,
+                hostCode = store.profile.value.partner?.code ?: Invite.randomCode(),
             )
         }
     }

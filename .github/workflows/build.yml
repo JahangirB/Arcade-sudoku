@@ -68,14 +68,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          cp app-debug.apk GameSuite.apk
+          # Apps from before the rename download this name when updating.
           mv app-debug.apk ArcadeSudoku.apk
           # The app's updater reads this to see whether a newer build exists.
           # versionCode is the run number, the same value Gradle used for this build.
           echo "{\"versionCode\": ${GITHUB_RUN_NUMBER}, \"versionName\": \"1.0.${GITHUB_RUN_NUMBER}\"}" > version.json
           cat version.json
           gh release delete latest --cleanup-tag --yes --repo "$GITHUB_REPOSITORY" || true
-          gh release create latest ArcadeSudoku.apk version.json \
+          gh release create latest GameSuite.apk ArcadeSudoku.apk version.json \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Arcade Sudoku 1.0.${GITHUB_RUN_NUMBER}" \
-            --notes "Built from commit ${GITHUB_SHA::7}. Install ArcadeSudoku.apk on an Android phone (allow installs from unknown sources)."
+            --title "Game Suite 1.0.${GITHUB_RUN_NUMBER}" \
+            --notes "Built from commit ${GITHUB_SHA::7}. Install GameSuite.apk on an Android phone (allow installs from unknown sources)."

@@ -11,8 +11,19 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 
-/** An error reported by the game server. [fatal] means the battle is gone for this player. */
-class ApiException(message: String, val fatal: Boolean = false) : Exception(message)
+/**
+ * An error reported by the game server. [fatal] means the battle is gone for this player;
+ * [reason] is a stable code (not_found, closed, not_member, full, code_taken) when there is one.
+ */
+class ApiException(message: String, val fatal: Boolean = false, val reason: String? = null) : Exception(message) {
+    companion object {
+        fun from(json: JSONObject) = ApiException(
+            json.optString("error", "Unknown server error"),
+            json.optBoolean("fatal"),
+            if (json.isNull("reason")) null else json.optString("reason"),
+        )
+    }
+}
 
 /**
  * Talks to the Google Apps Script web app (backend/Code.gs).
@@ -28,11 +39,11 @@ class BattleApi(scriptUrl: String) : BattleBackend {
 
     override suspend fun ping() = call("ping")
 
-    override suspend fun create(code: String, name: String, avatar: Avatar?) =
-        call("create", "code" to code, "name" to name, "avatar" to avatar?.key)
+    override suspend fun create(code: String, me: Hello, game: GameKind) =
+        call("create", "code" to code, "name" to me.name, "avatar" to me.avatar?.key, "game" to game.key)
 
-    override suspend fun join(code: String, name: String, avatar: Avatar?) =
-        call("join", "code" to code, "name" to name, "avatar" to avatar?.key)
+    override suspend fun join(code: String, me: Hello, playerId: String?) =
+        call("join", "code" to code, "name" to me.name, "avatar" to me.avatar?.key, "playerId" to playerId)
 
     /** Marks the player ready for [difficulty], or not ready (difficulty is then ignored). */
     override suspend fun ready(code: String, playerId: String, ready: Boolean, difficulty: Difficulty?) =
@@ -64,7 +75,7 @@ class BattleApi(scriptUrl: String) : BattleBackend {
                 throw ApiException(NOT_A_GAME_SERVER)
             }
             if (!json.optBoolean("ok")) {
-                throw ApiException(json.optString("error", "Unknown server error"), json.optBoolean("fatal"))
+                throw ApiException.from(json)
             }
             json
         }
