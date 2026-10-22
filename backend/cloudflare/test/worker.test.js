@@ -158,4 +158,23 @@ test('a full battle over WebSockets', { skip: !enabled, timeout: 90_000 }, async
   assert.equal(invite.ok, false);
   assert.equal(invite.reason, 'push_not_configured');
   assert.equal((await post('/register', { deviceId: 'nope', token: 'short' })).ok, false);
+
+  // Ship Battle over the same server: fleets in, then turns.
+  const sea = `S${Date.now().toString(36).toUpperCase()}`.slice(0, 12);
+  const row = (y) => [5, 4, 3, 3, 2].map((len, i) => ({ x: 0, y: y + i * 2, len, horizontal: true }));
+  const captain = connect({ code: sea, action: 'create', name: 'Ann', game: 'ships' });
+  assert.equal((await captain.next((m) => m.re === 'open')).game, 'ships');
+  const rival = connect({ code: sea, action: 'join', name: 'Ben' });
+  await rival.next((m) => m.re === 'open');
+  await captain.request('ready', { fleet: row(0) });
+  const started = await rival.request('ready', { fleet: row(0) });
+  assert.equal(started.status, 'playing');
+  const shooter = started.ships.turn === 'me' ? rival : captain;
+  const shot = await shooter.request('fire', { x: 0, y: 0 });
+  assert.equal(shot.ships.lastShot.hit, true);
+  assert.equal(shot.ships.turn, 'me', 'a hit fires again');
+  const other = shooter === rival ? captain : rival;
+  const seen = await other.next((m) => m.type === 'state' && m.ships?.theirShots?.length === 1);
+  assert.equal(seen.ships.theirShots[0].hit, true);
+  for (const c of [captain, rival]) c.ws.close();
 });

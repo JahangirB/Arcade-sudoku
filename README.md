@@ -22,6 +22,29 @@ level** both phones get the **same puzzle** and the match **starts at the same m
 While you solve you see your opponent's progress as a live percentage, and you can send
 quick **reactions** (👍 👏 🔥 😂 😮 😅 🤔 😎 ❤️ ⏰). The first player to solve the puzzle wins.
 
+## Games
+
+- **Sudoku:** solo, online battle against your partner, or nearby battle (details below).
+- **Ship Battle:** each player hides five ships (5, 4, 3, 3 and 2 squares) on a 10×10 sea and
+  you take turns firing at each other's sea. A hit lets you fire again; the first to sink the
+  whole fleet wins. Play against the computer, online with your partner (Cloudflare server)
+  or nearby. Tap **Shuffle** until you like your fleet, then **Ready**. The server keeps both
+  fleets, so neither phone can peek; enemy ships are revealed as they sink.
+
+## Playing with your partner
+
+After your first online battle the app **remembers your partner**: the server link,
+password and secret code. The home screen then shows **Play with *name***:
+
+- **Join** (or **Play**) reopens the same room with the same code. Whoever taps first opens
+  it and the other joins; nothing to type or share again.
+- **Invite** opens the room and sends your partner a **notification**: *"Sam invites you to
+  play"* with **Play** (opens the app straight into the game) and **Decline** (you get a
+  notification that they can't play right now). Invitations need the Cloudflare server and the
+  one-time Firebase setup below.
+
+*Profile → Saved partner* shows who is saved and has a **Forget** button.
+
 ## Solo play
 
 Tap **New Game**, pick a level and play. You get the tools of popular Sudoku apps:
@@ -182,6 +205,30 @@ players, winner, reason, time and percentages.
 only join a battle if they also have its secret code. The script only touches
 its own cache and (if bound) its own spreadsheet.
 
+## 1c. Invitations: one-time Firebase setup (free)
+
+Android only delivers instant notifications to a closed app through Google's push service,
+Firebase Cloud Messaging. It is free. The host does this once:
+
+1. Open the [Firebase console](https://console.firebase.google.com), **Create a project**
+   (any name, e.g. `game-suite`; Google Analytics can be off).
+2. In the project, **Add app → Android**. Package name: **`com.arcade.sudoku`** (exactly this;
+   it is the app's internal id). App nickname: Game Suite. Register, then **download
+   `google-services.json`** and skip the remaining steps. Put the file in `app/` of this
+   repository (or send it to whoever builds the app). It identifies your Firebase project
+   and is not a secret; the next build switches invitations on.
+3. In Firebase: **Project settings → Service accounts → Generate new private key**. This
+   downloads a JSON key, which *is* secret: don't commit or share it.
+4. In Cloudflare: **Workers & Pages → your Worker → Settings → Variables and Secrets → Add**,
+   type **Secret**, name **`FIREBASE_SERVICE_ACCOUNT`**, value: the whole content of that key
+   file. Save and deploy.
+5. Update both phones to the new app, open it once (so it registers for notifications and
+   asks for the notification permission), and play one online battle together. From then on
+   **Invite** works.
+
+If an invitation fails with a permission error, open the Google Cloud console for the same
+project and make sure **Firebase Cloud Messaging API** is enabled.
+
 ## 2. Install the Android app
 
 - **Download:** use the **Download** button at the top of this page. It always points to the
@@ -212,8 +259,10 @@ Requires Android 8.0 (API 26) or newer.
 | --- | --- |
 | `backend/Code.gs` | Apps Script web app: rooms, puzzle generator, start sync, progress, winner |
 | `backend/test/` | Node tests that run `Code.gs` against mocked Apps Script services |
-| `backend/cloudflare/` | Cloudflare Worker + Durable Object server (`src/room.js` has the rules), with unit and end-to-end tests |
+| `backend/cloudflare/` | Cloudflare Worker: one Durable Object per room (`src/room.js`: Sudoku and Ship Battle rules) and a Directory object for invitations (`src/directory.js`, `src/push.js`), with unit and end-to-end tests |
 | `app/src/main/java/com/arcade/sudoku/data/` | Server clients (`BattleApi` for Apps Script, `CloudflareBattle`), response models, invites, profile, updater |
+| `app/src/main/java/com/arcade/sudoku/game/ships/` | Ship Battle rules, random fleets and the computer opponent |
+| `app/src/main/java/com/arcade/sudoku/push/` | Invitations: Firebase setup, notifications with Play/Decline, the invite endpoints |
 | `app/src/main/java/com/arcade/sudoku/data/nearby/` | Nearby battles: `LocalRoom` (the rules, run on the host phone), `NearbyHost`, `NearbyGuest` |
 | `app/src/main/java/com/arcade/sudoku/game/` | Board, notes/undo, puzzle generator and the solo game rules |
 | `app/src/main/java/com/arcade/sudoku/ui/` | `BattleViewModel` (session, polling, clock sync), `SoloViewModel` and the Compose screens |

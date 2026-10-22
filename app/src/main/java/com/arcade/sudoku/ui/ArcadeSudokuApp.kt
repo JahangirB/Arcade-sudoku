@@ -30,11 +30,14 @@ import com.arcade.sudoku.ui.screens.GameScreen
 import com.arcade.sudoku.ui.screens.HomeScreen
 import com.arcade.sudoku.ui.screens.LobbyScreen
 import com.arcade.sudoku.ui.screens.ProfileScreen
+import com.arcade.sudoku.ui.screens.ShipsGameScreen
 import com.arcade.sudoku.ui.screens.SoloScreen
+import com.arcade.sudoku.ui.screens.SoloShipsScreen
+import com.arcade.sudoku.data.GameKind
 import com.arcade.sudoku.ui.screens.UpdateDialog
 import com.arcade.sudoku.ui.theme.AppTheme
 
-private enum class Dest { HOME, PROFILE, BATTLE, SOLO }
+private enum class Dest { HOME, PROFILE, BATTLE, SOLO, SHIPS }
 
 @Composable
 fun ArcadeSudokuApp(
@@ -42,12 +45,14 @@ fun ArcadeSudokuApp(
     battle: BattleViewModel = viewModel(),
     solo: SoloViewModel = viewModel(),
     updates: UpdateViewModel = viewModel(),
+    ships: SoloShipsViewModel = viewModel(),
 ) {
     val p = AppTheme.palette
     val profile by app.profile.collectAsStateWithLifecycle()
     val battleState by battle.state.collectAsStateWithLifecycle()
     val soloState by solo.state.collectAsStateWithLifecycle()
     val updateState by updates.state.collectAsStateWithLifecycle()
+    val shipsState by ships.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     var dest by rememberSaveable { mutableStateOf(Dest.HOME) }
     var confirmLeave by rememberSaveable { mutableStateOf(false) }
@@ -92,7 +97,9 @@ fun ArcadeSudokuApp(
             when {
                 room != null && (room.status == RoomStatus.WAITING || room.status == RoomStatus.LOBBY) ->
                     LobbyScreen(battleState, profile, battle, onLeave = requestLeave)
+                room != null && room.game == GameKind.SHIPS -> ShipsGameScreen(battleState, battle, onLeave = requestLeave)
                 room != null -> GameScreen(battleState, battle, onLeave = requestLeave)
+                dest == Dest.SHIPS -> SoloShipsScreen(shipsState, ships, onHome = { dest = Dest.HOME })
                 dest == Dest.SOLO -> SoloScreen(soloState, solo, onHome = { dest = Dest.HOME })
                 dest == Dest.PROFILE -> ProfileScreen(
                     profile, battleState.busy, app, battle, updateState,
@@ -120,6 +127,7 @@ fun ArcadeSudokuApp(
                     },
                     onBattle = { dest = Dest.BATTLE },
                     onProfile = { dest = Dest.PROFILE },
+                    onShips = { dest = Dest.SHIPS },
                     partnerBusy = battleState.busy,
                     onPlayWithPartner = battle::playWithPartner,
                     onInvitePartner = battle::invitePartner,

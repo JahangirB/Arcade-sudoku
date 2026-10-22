@@ -8,7 +8,7 @@
 //
 // Each room is one Durable Object, so a room's state lives in one place and every
 // change is pushed to both players at once. Messages are JSON:
-//   app -> server  { id, type: 'ready' | 'board' | 'emoji' | 'sync' | 'leave', ... }
+//   app -> server  { id, type: 'ready' | 'board' | 'fire' | 'emoji' | 'sync' | 'leave', ... }
 //   server -> app  { type: 'state', re?, serverTime, ...room view }   (re = id it answers)
 //                  { type: 'error', re?, error, fatal }
 
@@ -17,7 +17,7 @@ import { DirectoryError, pair, prepareMessage, register } from './directory.js';
 import { createPushSender } from './push.js';
 import {
   GameError, checkTimers, createRoom, joinRoom, leave, nextDeadline, normalizeCode,
-  sendEmoji, setConnected, setReady, submitBoard, view,
+  fire, sendEmoji, setConnected, setReady, setShipsReady, submitBoard, view,
 } from './room.js';
 
 const API_VERSION = 1;
@@ -160,7 +160,11 @@ export class Room extends DurableObject {
       }
       switch (msg.type) {
         case 'ready':
-          setReady(this.room, role, msg.ready !== false, msg.difficulty, now);
+          if (this.room.game === 'ships') setShipsReady(this.room, role, msg.ready !== false, msg.fleet, now);
+          else setReady(this.room, role, msg.ready !== false, msg.difficulty, now);
+          break;
+        case 'fire':
+          fire(this.room, role, msg.x, msg.y, now);
           break;
         case 'board':
           submitBoard(this.room, role, msg.board, now);

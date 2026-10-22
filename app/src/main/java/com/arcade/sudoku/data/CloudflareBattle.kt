@@ -1,5 +1,6 @@
 package com.arcade.sudoku.data
 
+import com.arcade.sudoku.game.ships.Ship
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -116,6 +117,12 @@ class CloudflareBattle(serverUrl: String, private val password: String) : Battle
 
     override suspend fun emoji(code: String, playerId: String, reaction: Reaction) =
         request(JSONObject().put("type", "emoji").put("emoji", reaction.key))
+
+    override suspend fun readyShips(code: String, playerId: String, ready: Boolean, fleet: List<Ship>) =
+        request(JSONObject().put("type", "ready").put("ready", ready).put("fleet", fleet.toJson()))
+
+    override suspend fun fire(code: String, playerId: String, x: Int, y: Int) =
+        request(JSONObject().put("type", "fire").put("x", x).put("y", y))
 
     override suspend fun leave(code: String, playerId: String) {
         try {

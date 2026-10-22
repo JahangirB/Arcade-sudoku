@@ -19,6 +19,8 @@ import com.arcade.sudoku.data.nearby.NearbyGuest
 import com.arcade.sudoku.data.nearby.NearbyHost
 import com.arcade.sudoku.data.parseRoom
 import com.arcade.sudoku.game.BoardState
+import com.arcade.sudoku.game.ships.Fleet
+import com.arcade.sudoku.game.ships.Ship
 import com.arcade.sudoku.push.Push
 import com.arcade.sudoku.push.PushApi
 import com.arcade.sudoku.game.Sudoku
@@ -64,6 +66,10 @@ data class BattleUiState(
     val reconnecting: Boolean = false,
     val opponentReaction: ShownReaction? = null,
     val myReaction: ShownReaction? = null,
+    /** Ship Battle: the fleet you will be ready with (shuffle until you like it). */
+    val fleetDraft: List<Ship> = Fleet.random(),
+    /** Ship Battle: a shot is on its way. */
+    val firing: Boolean = false,
     /** Nearby hosts found while looking for a game. */
     val nearbyHosts: List<FoundHost> = emptyList(),
     val scanning: Boolean = false,
@@ -100,6 +106,8 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
     private var sessionJob: Job? = null
     private val syncNow = Channel<Unit>(Channel.CONFLATED)
     private var loadedRound = -1
+    /** The Ship Battle round after which the draft fleet was last reshuffled. */
+    private var reshuffledRound = -1
     private var recordedRound = -1
     private var lastSentBoard: String? = null
     private var bestRoundTripMs = Long.MAX_VALUE
@@ -377,6 +385,41 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun shuffleFleet() = _state.update { it.copy(fleetDraft = Fleet.random()) }
+
+    /** Ship Battle: ready with the drafted fleet, or not ready any more. */
+    fun readyShips() = runBusy {
+        val room = _state.value.room ?: return@runBusy
+        val id = playerId ?: return@runBusy
+        val sentAt = System.currentTimeMillis()
+        applyResponse(requireBackend().readyShips(room.code, id, !room.me.ready, _state.value.fleetDraft), sentAt)
+    }
+
+    /** Ship Battle: fire at the opponent's sea. */
+    fun fire(x: Int, y: Int) {
+        val s = _state.value
+        val room = s.room ?: return
+        val id = playerId ?: return
+        val b = backend ?: return
+        val ships = room.ships ?: return
+        if (s.firing || ships.turn != "me" || ships.myShots.any { it.x == x && it.y == y }) return
+        _state.update { it.copy(firing = true) }
+        viewModelScope.launch {
+            try {
+                val sentAt = System.currentTimeMillis()
+                applyResponse(b.fire(room.code, id, x, y), sentAt)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: ApiException) {
+                if (e.fatal) endSession(e.message) else showMessage(e.message)
+            } catch (e: IOException) {
+                showMessage("Network problem, try again.")
+            } finally {
+                _state.update { it.copy(firing = false) }
+            }
+        }
+    }
+
     fun select(index: Int) = _state.update { it.copy(selected = if (it.selected == index) null else index) }
     fun toggleNotes() = _state.update { it.copy(notesMode = !it.notesMode) }
 
@@ -542,6 +585,11 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
         }
         // Show the opponent's reaction when a new one arrives (not old ones on first load).
         val emoji = room.opponent?.emoji
+        // A new Ship Battle round needs a fresh fleet.
+        if (room.game == GameKind.SHIPS && room.status == RoomStatus.FINISHED && room.round != reshuffledRound) {
+            reshuffledRound = room.round
+            _state.update { it.copy(fleetDraft = Fleet.random()) }
+        }
         val newReaction = if (emoji != null && lastOpponentEmojiSeq >= 0 && emoji.seq > lastOpponentEmojiSeq) {
             ShownReaction(emoji.reaction, System.currentTimeMillis())
         } else {

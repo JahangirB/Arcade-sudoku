@@ -67,6 +67,7 @@ fun HomeScreen(
     onNewGame: (Difficulty) -> Unit,
     onBattle: () -> Unit,
     onProfile: () -> Unit,
+    onShips: () -> Unit,
     partnerBusy: Boolean,
     onPlayWithPartner: (GameKind) -> Unit,
     onInvitePartner: (GameKind) -> Unit,
@@ -122,6 +123,11 @@ fun HomeScreen(
                     } else {
                         PrimaryButton("New game", { pickingLevel = true })
                     }
+                }
+
+                AppCard("Ship Battle") {
+                    Text("Hide your fleet, sink theirs. A hit fires again.", color = p.muted, fontSize = 14.sp)
+                    PrimaryButton("Play vs computer", onShips)
                 }
 
                 SecondaryButton("Battle a friend", onBattle)

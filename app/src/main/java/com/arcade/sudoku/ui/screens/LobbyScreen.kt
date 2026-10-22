@@ -35,6 +35,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.arcade.sudoku.data.Difficulty
+import com.arcade.sudoku.data.GameKind
 import com.arcade.sudoku.data.Invite
 import com.arcade.sudoku.data.PlayerInfo
 import com.arcade.sudoku.data.Profile
@@ -54,7 +55,7 @@ fun LobbyScreen(state: BattleUiState, profile: Profile, vm: BattleViewModel, onL
     val now = rememberTicker()
 
     Column(Modifier.fillMaxSize()) {
-        ScreenTopBar("Battle lobby", onLeave)
+        ScreenTopBar("${room.game.label} lobby", onLeave)
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -120,8 +121,19 @@ fun LobbyScreen(state: BattleUiState, profile: Profile, vm: BattleViewModel, onL
                 }
             }
 
-            AppCard("Choose the level") {
-                LevelPicker(room, state.busy, onPick = vm::chooseLevel)
+            if (room.game == GameKind.SHIPS) {
+                FleetCard(
+                    fleet = if (room.me.ready) room.ships?.myFleet.orEmpty() else state.fleetDraft,
+                    ready = room.me.ready,
+                    opponent = opponent,
+                    busy = state.busy,
+                    onShuffle = vm::shuffleFleet,
+                    onReady = vm::readyShips,
+                )
+            } else {
+                AppCard("Choose the level") {
+                    LevelPicker(room, state.busy, onPick = vm::chooseLevel)
+                }
             }
             if (opponent != null) ReactionBar(onReact = vm::react)
         }
@@ -144,6 +156,7 @@ private fun PlayerRow(player: PlayerInfo, isMe: Boolean, color: Color, reaction:
         when {
             player.online == false -> Pill("Offline", p.bad)
             player.ready && player.difficulty != null -> Pill("Ready · ${player.difficulty.label}", p.good)
+            player.ready -> Pill("Ready", p.good)
             else -> Pill("Choosing…", p.muted)
         }
     }

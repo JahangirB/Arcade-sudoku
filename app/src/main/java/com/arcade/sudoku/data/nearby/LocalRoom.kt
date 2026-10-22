@@ -5,7 +5,13 @@ import com.arcade.sudoku.data.Avatar
 import com.arcade.sudoku.data.Difficulty
 import com.arcade.sudoku.data.GameKind
 import com.arcade.sudoku.data.Reaction
+import com.arcade.sudoku.data.toJson
 import com.arcade.sudoku.game.Generator
+import com.arcade.sudoku.game.ships.Fleet
+import com.arcade.sudoku.game.ships.Sea
+import com.arcade.sudoku.game.ships.Ship
+import com.arcade.sudoku.game.ships.Shot
+import kotlin.random.Random
 import org.json.JSONObject
 import java.util.UUID
 
@@ -32,6 +38,10 @@ class LocalRoom(
         var awaySince: Long? = null
         var emoji: Pair<Reaction, Int>? = null
         var emojiAt = 0L
+        // Ship Battle
+        var pendingFleet: List<Ship>? = null
+        var fleet: List<Ship> = emptyList()
+        var shots: List<Shot> = emptyList()
     }
 
     var status = "waiting"
@@ -46,6 +56,8 @@ class LocalRoom(
     private var winner: String? = null
     private var endReason: String? = null
     private var emojiSeq = 0
+    private var turn: String? = null
+    private var lastShot: Pair<String, Shot>? = null
     val players = mutableMapOf<String, Player?>(HOST to newPlayer(hostName, hostAvatar), GUEST to null)
 
     fun playerId(role: String) = players.getValue(role)!!.id
@@ -103,6 +115,69 @@ class LocalRoom(
             p.progress = 0
             p.finishedAt = null
         }
+    }
+
+    /** Ship Battle: ready with a fleet. The battle starts when both fleets are in. */
+    fun setShipsReady(role: String, ready: Boolean, fleet: List<Ship>, now: Long, random: Random = Random.Default) {
+        if (status != "lobby" && status != "finished") {
+            throw ApiException("You can only get ready in the lobby or after a match.")
+        }
+        val guest = players[GUEST] ?: throw ApiException("Waiting for an opponent to join.")
+        if (players.getValue(other(role))!!.left) throw ApiException("Your opponent has left the battle.")
+        val me = players.getValue(role)!!
+        if (!ready) {
+            me.ready = false
+            me.pendingFleet = null
+        } else {
+            try {
+                Fleet.validate(fleet)
+            } catch (e: IllegalArgumentException) {
+                throw ApiException(e.message ?: "Invalid fleet.")
+            }
+            me.pendingFleet = fleet
+            me.ready = true
+        }
+        if (host.ready && guest.ready) {
+            round++
+            status = "started"
+            startAt = now
+            winner = null
+            endReason = null
+            turn = if (random.nextBoolean()) HOST else GUEST
+            lastShot = null
+            for (p in listOf(host, guest)) {
+                p.fleet = p.pendingFleet!!
+                p.pendingFleet = null
+                p.shots = emptyList()
+                p.progress = 0
+                p.ready = false
+                p.finishedAt = null
+            }
+        }
+        version++
+    }
+
+    /** Ship Battle: fire at the other player's sea; a hit fires again. */
+    fun fire(role: String, x: Int, y: Int, now: Long) {
+        if (game != GameKind.SHIPS || status != "started") throw ApiException("The battle is not running.")
+        if (turn != role) throw ApiException("It's not your turn.")
+        if (x !in 0 until Sea.SIZE || y !in 0 until Sea.SIZE) throw ApiException("Fire inside the sea.")
+        val me = players.getValue(role)!!
+        val enemy = players.getValue(other(role))!!
+        if (me.shots.any { it.x == x && it.y == y }) throw ApiException("You already fired there.")
+        val hit = enemy.fleet.any { Sea.cell(x, y) in it.cells }
+        val shot = Shot(x, y, hit)
+        me.shots = me.shots + shot
+        lastShot = role to shot
+        val hits = me.shots.count { it.hit }
+        me.progress = hits * 100 / Sea.FLEET_CELLS
+        if (hits == Sea.FLEET_CELLS) {
+            me.finishedAt = now
+            endMatch(role, "sunk")
+        } else if (!hit) {
+            turn = other(role)
+        }
+        version++
     }
 
     /** Stores a board during a match; returns true if anything changed. */
@@ -204,8 +279,28 @@ class LocalRoom(
             .put("solution", if (shown == "finished") solution else JSONObject.NULL)
             .put("winner", winner?.let { if (it == role) "me" else "opponent" } ?: JSONObject.NULL)
             .put("endReason", endReason ?: JSONObject.NULL)
-            .put("me", playerView(players.getValue(role)!!, shown == "finished", now))
+            // In Ship Battle both players' progress (share of the enemy fleet hit) is public.
+            .put("me", playerView(players.getValue(role)!!, shown == "finished" || game == GameKind.SHIPS, now))
             .put("opponent", opponent?.let { playerView(it, true, now) } ?: JSONObject.NULL)
+            .put("ships", if (game == GameKind.SHIPS) shipsView(role, shown) else JSONObject.NULL)
+    }
+
+    private fun shipsView(role: String, shown: String): JSONObject {
+        val me = players.getValue(role)!!
+        val opponent = players[other(role)]
+        return JSONObject()
+            .put("turn", if (shown == "playing") (if (turn == role) "me" else "opponent") else JSONObject.NULL)
+            .put("myFleet", (me.fleet.ifEmpty { me.pendingFleet.orEmpty() }).toJson())
+            .put("myShots", me.shots.toShotJson())
+            .put("theirShots", opponent?.shots.orEmpty().toShotJson())
+            .put("sunkEnemy", opponent?.fleet.orEmpty().filter { Fleet.isSunk(it, me.shots) }.toJson())
+            .put("enemyFleet", if (shown == "finished" && opponent != null) opponent.fleet.toJson() else JSONObject.NULL)
+            .put(
+                "lastShot",
+                lastShot?.let { (by, s) ->
+                    JSONObject().put("by", if (by == role) "me" else "opponent").put("x", s.x).put("y", s.y).put("hit", s.hit)
+                } ?: JSONObject.NULL,
+            )
     }
 
     private fun playerView(p: Player, includeProgress: Boolean, now: Long): JSONObject = JSONObject()
@@ -221,6 +316,9 @@ class LocalRoom(
         .put("online", p.connected)
 
     private val host get() = players.getValue(HOST)!!
+
+    private fun List<Shot>.toShotJson() =
+        org.json.JSONArray(map { JSONObject().put("x", it.x).put("y", it.y).put("hit", it.hit) })
 
     private fun newPlayer(name: String, avatar: Avatar?) =
         Player(UUID.randomUUID().toString(), name.trim().take(16).ifBlank { "Player" }, avatar)

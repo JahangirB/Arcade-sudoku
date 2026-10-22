@@ -35,6 +35,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.arcade.sudoku.data.GameKind
 import com.arcade.sudoku.data.Profile
 import com.arcade.sudoku.ui.BattleUiState
 import com.arcade.sudoku.ui.BattleViewModel
@@ -83,6 +84,7 @@ fun BattleMenuScreen(
 
             if (hosting) {
                 AppCard("Host a battle") {
+                    GameChooser(state.hostGame, vm::setHostGame)
                     Text(
                         "Share the server link and this secret code with your opponent. " +
                             "You both choose the level in the lobby.",
@@ -151,6 +153,16 @@ fun BattleMenuScreen(
                 loading = state.busy,
             )
             }
+        }
+    }
+}
+
+/** Which game to host. */
+@Composable
+fun GameChooser(selected: GameKind, onSelect: (GameKind) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        GameKind.entries.forEach { game ->
+            FilterChip(selected = selected == game, onClick = { onSelect(game) }, label = { Text(game.label) })
         }
     }
 }

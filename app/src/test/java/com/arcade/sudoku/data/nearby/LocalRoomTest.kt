@@ -109,3 +109,31 @@ class LocalRoomTest {
         assertTrue(e.fatal)
     }
 }
+
+class LocalShipsTest {
+    private val fleet = listOf(
+        com.arcade.sudoku.game.ships.Ship(0, 0, 5, true), com.arcade.sudoku.game.ships.Ship(0, 2, 4, true),
+        com.arcade.sudoku.game.ships.Ship(0, 4, 3, true), com.arcade.sudoku.game.ships.Ship(0, 6, 3, true),
+        com.arcade.sudoku.game.ships.Ship(0, 8, 2, true),
+    )
+
+    @Test
+    fun shipBattleOverANearbyRoom() {
+        val room = LocalRoom("SEA1", "Ann", null, com.arcade.sudoku.data.GameKind.SHIPS)
+        room.join("Ben", null, null)
+        room.setShipsReady(LocalRoom.HOST, true, fleet, 0, kotlin.random.Random(1))
+        assertEquals("lobby", room.status)
+        room.setShipsReady(LocalRoom.GUEST, true, fleet, 0, kotlin.random.Random(1))
+        val host = parseRoom(room.view(LocalRoom.HOST, 0))
+        assertEquals(com.arcade.sudoku.data.GameKind.SHIPS, host.game)
+        assertEquals(RoomStatus.PLAYING, host.status)
+        val shooter = if (host.ships!!.turn == "me") LocalRoom.HOST else LocalRoom.GUEST
+        room.fire(shooter, 0, 8, 0)
+        room.fire(shooter, 1, 8, 0)
+        val view = parseRoom(room.view(shooter, 0)).ships!!
+        assertEquals(1, view.sunkEnemy.size)
+        assertEquals("me", view.turn)
+        assertThrows(ApiException::class.java) { room.fire(LocalRoom.other(shooter), 0, 0, 0) }
+        assertEquals(2, parseRoom(room.view(LocalRoom.other(shooter), 0)).ships!!.theirShots.size)
+    }
+}

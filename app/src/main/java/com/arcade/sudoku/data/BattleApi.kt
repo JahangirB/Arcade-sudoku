@@ -1,5 +1,6 @@
 package com.arcade.sudoku.data
 
+import com.arcade.sudoku.game.ships.Ship
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -58,6 +59,12 @@ class BattleApi(scriptUrl: String) : BattleBackend {
     override suspend fun emoji(code: String, playerId: String, reaction: Reaction) =
         call("emoji", "code" to code, "playerId" to playerId, "emoji" to reaction.key)
 
+    override suspend fun readyShips(code: String, playerId: String, ready: Boolean, fleet: List<Ship>): JSONObject =
+        throw ApiException(SHIPS_UNSUPPORTED)
+
+    override suspend fun fire(code: String, playerId: String, x: Int, y: Int): JSONObject =
+        throw ApiException(SHIPS_UNSUPPORTED)
+
     override suspend fun leave(code: String, playerId: String) {
         call("leave", "code" to code, "playerId" to playerId)
     }
@@ -112,6 +119,7 @@ class BattleApi(scriptUrl: String) : BattleBackend {
         const val MAX_REDIRECTS = 5
         const val DEPLOY_HINT =
             "Check the link and that the script is deployed as a web app with access for \"Anyone\"."
+        const val SHIPS_UNSUPPORTED = "Ship Battle needs the Cloudflare server or a nearby battle."
         const val NOT_A_GAME_SERVER = "That link is not a Sudoku Battle server. $DEPLOY_HINT"
     }
 }

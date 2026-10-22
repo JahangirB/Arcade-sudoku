@@ -92,6 +92,7 @@ fun NearbySection(state: BattleUiState, vm: BattleViewModel) {
     }
 
     AppCard("Host") {
+        GameChooser(state.hostGame, vm::setHostGame)
         Text("Wait here for your friend to find you.", color = p.muted, fontSize = 13.sp)
         PrimaryButton("Host nearby battle", { withPermissions(vm::hostNearby) }, loading = state.busy)
     }

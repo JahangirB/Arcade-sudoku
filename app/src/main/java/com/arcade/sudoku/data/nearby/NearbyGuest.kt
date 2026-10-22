@@ -8,6 +8,8 @@ import com.arcade.sudoku.data.Difficulty
 import com.arcade.sudoku.data.GameKind
 import com.arcade.sudoku.data.Hello
 import com.arcade.sudoku.data.Reaction
+import com.arcade.sudoku.data.toJson
+import com.arcade.sudoku.game.ships.Ship
 import com.google.android.gms.nearby.Nearby
 import com.google.android.gms.nearby.connection.ConnectionInfo
 import com.google.android.gms.nearby.connection.ConnectionLifecycleCallback
@@ -119,6 +121,12 @@ class NearbyGuest(context: Context) : BattleBackend {
 
     override suspend fun emoji(code: String, playerId: String, reaction: Reaction) =
         request(JSONObject().put("type", "emoji").put("emoji", reaction.key))
+
+    override suspend fun readyShips(code: String, playerId: String, ready: Boolean, fleet: List<Ship>) =
+        request(JSONObject().put("type", "ready").put("ready", ready).put("fleet", fleet.toJson()))
+
+    override suspend fun fire(code: String, playerId: String, x: Int, y: Int) =
+        request(JSONObject().put("type", "fire").put("x", x).put("y", y))
 
     override suspend fun leave(code: String, playerId: String) {
         try {

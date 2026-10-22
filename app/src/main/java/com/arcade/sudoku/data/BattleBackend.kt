@@ -1,5 +1,6 @@
 package com.arcade.sudoku.data
 
+import com.arcade.sudoku.game.ships.Ship
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import org.json.JSONObject
@@ -25,6 +26,12 @@ interface BattleBackend {
     /** Uploads [board] if given; [version] lets a polling server answer just "unchanged". */
     suspend fun sync(code: String, playerId: String, board: String?, version: Int?): JSONObject
     suspend fun emoji(code: String, playerId: String, reaction: Reaction): JSONObject
+
+    /** Ship Battle: ready with [fleet] (or not ready). */
+    suspend fun readyShips(code: String, playerId: String, ready: Boolean, fleet: List<Ship>): JSONObject
+
+    /** Ship Battle: fire at the opponent's sea. */
+    suspend fun fire(code: String, playerId: String, x: Int, y: Int): JSONObject
     suspend fun leave(code: String, playerId: String)
 
     /** Drops any live connection. */

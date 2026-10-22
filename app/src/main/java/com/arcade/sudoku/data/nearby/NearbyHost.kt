@@ -8,6 +8,7 @@ import com.arcade.sudoku.data.Difficulty
 import com.arcade.sudoku.data.GameKind
 import com.arcade.sudoku.data.Hello
 import com.arcade.sudoku.data.Reaction
+import com.arcade.sudoku.game.ships.Ship
 import com.google.android.gms.nearby.Nearby
 import com.google.android.gms.nearby.connection.AdvertisingOptions
 import com.google.android.gms.nearby.connection.ConnectionInfo
@@ -77,6 +78,12 @@ class NearbyHost(context: Context, private val hostName: String, private val hos
 
     override suspend fun emoji(code: String, playerId: String, reaction: Reaction) =
         local { sendEmoji(LocalRoom.HOST, reaction, now()) }
+
+    override suspend fun readyShips(code: String, playerId: String, ready: Boolean, fleet: List<Ship>) =
+        local { setShipsReady(LocalRoom.HOST, ready, fleet, now()) }
+
+    override suspend fun fire(code: String, playerId: String, x: Int, y: Int) =
+        local { fire(LocalRoom.HOST, x, y, now()) }
 
     override suspend fun leave(code: String, playerId: String) {
         withContext(Dispatchers.Main.immediate) {
@@ -168,7 +175,12 @@ class NearbyHost(context: Context, private val hostName: String, private val hos
                     pushHost()
                     return
                 }
-                "ready" -> r.setReady(LocalRoom.GUEST, msg.optBoolean("ready", true), Difficulty.from(msg.optString("difficulty")), now)
+                "ready" -> if (r.game == GameKind.SHIPS) {
+                    r.setShipsReady(LocalRoom.GUEST, msg.optBoolean("ready", true), parseFleet(msg.optJSONArray("fleet")), now)
+                } else {
+                    r.setReady(LocalRoom.GUEST, msg.optBoolean("ready", true), Difficulty.from(msg.optString("difficulty")), now)
+                }
+                "fire" -> r.fire(LocalRoom.GUEST, msg.optInt("x", -1), msg.optInt("y", -1), now)
                 "board" -> r.submitBoard(LocalRoom.GUEST, msg.optString("board"), now)
                 "emoji" -> r.sendEmoji(
                     LocalRoom.GUEST,
@@ -192,6 +204,11 @@ class NearbyHost(context: Context, private val hostName: String, private val hos
             send(endpointId, errorJson(id ?: if (msg.optString("type") == "open") "open" else null, e.message, e.fatal, e.reason))
         }
     }
+
+    private fun parseFleet(array: org.json.JSONArray?): List<Ship> =
+        if (array == null) emptyList() else (0 until array.length()).mapNotNull { array.optJSONObject(it) }.map {
+            Ship(it.optInt("x"), it.optInt("y"), it.optInt("len"), it.optBoolean("horizontal"))
+        }
 
     private fun send(endpointId: String, json: JSONObject) {
         client.sendPayload(endpointId, json.toPayload())

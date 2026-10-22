@@ -143,6 +143,124 @@ function startRound(room, now, generate) {
   }
 }
 
+// ---------------------------------------------------------------------------------------
+// Ship Battle: each player hides a fleet on a 10x10 sea; players take turns firing at the
+// other's sea. A hit lets you fire again; the first to sink the whole fleet wins.
+
+export const SEA = 10;
+export const FLEET = [5, 4, 3, 3, 2];
+export const FLEET_CELLS = FLEET.reduce((a, b) => a + b, 0);
+
+/** The cells (y * 10 + x) a ship covers. */
+export function shipCells(ship) {
+  const cells = [];
+  for (let i = 0; i < ship.len; i++) {
+    cells.push(ship.horizontal ? ship.y * SEA + ship.x + i : (ship.y + i) * SEA + ship.x);
+  }
+  return cells;
+}
+
+/** Checks a fleet: the five classic ships, inside the sea, not overlapping. */
+export function validateFleet(fleet) {
+  if (!Array.isArray(fleet) || fleet.length !== FLEET.length) throw new GameError('Place all five ships.');
+  const ships = fleet.map((s) => ({
+    x: Number(s?.x), y: Number(s?.y), len: Number(s?.len), horizontal: !!s?.horizontal,
+  }));
+  const lengths = ships.map((s) => s.len).sort((a, b) => b - a);
+  if (lengths.join() !== FLEET.join()) throw new GameError('The fleet must be ships of 5, 4, 3, 3 and 2.');
+  const taken = new Set();
+  for (const ship of ships) {
+    const endX = ship.horizontal ? ship.x + ship.len - 1 : ship.x;
+    const endY = ship.horizontal ? ship.y : ship.y + ship.len - 1;
+    if (![ship.x, ship.y].every(Number.isInteger) || ship.x < 0 || ship.y < 0 || endX >= SEA || endY >= SEA) {
+      throw new GameError('A ship is outside the sea.');
+    }
+    for (const cell of shipCells(ship)) {
+      if (taken.has(cell)) throw new GameError('Ships cannot overlap.');
+      taken.add(cell);
+    }
+  }
+  return ships;
+}
+
+/** Ready with a fleet (or not ready). The battle starts when both fleets are in. */
+export function setShipsReady(room, role, ready, fleet, now, random = Math.random) {
+  if (room.status !== 'lobby' && room.status !== 'finished') {
+    throw new GameError('You can only get ready in the lobby or after a match.');
+  }
+  if (!room.players.guest) throw new GameError('Waiting for an opponent to join.');
+  if (room.players[otherRole(role)].left) throw new GameError('Your opponent has left the battle.');
+  const me = room.players[role];
+  if (ready === false) {
+    me.ready = false;
+    me.pendingFleet = null;
+  } else {
+    me.pendingFleet = validateFleet(fleet);
+    me.ready = true;
+  }
+  const { host, guest } = room.players;
+  if (host.ready && guest.ready) {
+    Object.assign(room, {
+      round: room.round + 1, status: 'started', startAt: now, winner: null, endReason: null,
+      turn: random() < 0.5 ? 'host' : 'guest', lastShot: null,
+    });
+    for (const p of [host, guest]) {
+      Object.assign(p, { fleet: p.pendingFleet, pendingFleet: null, shots: [], progress: 0, ready: false, finishedAt: null });
+    }
+  }
+  bump(room);
+}
+
+/** Fires at the opponent's sea. Returns { hit, sunk }. */
+export function fire(room, role, x, y, now) {
+  if (room.game !== 'ships' || room.status !== 'started') throw new GameError('The battle is not running.');
+  if (room.turn !== role) throw new GameError("It's not your turn.");
+  x = Number(x);
+  y = Number(y);
+  if (![x, y].every(Number.isInteger) || x < 0 || y < 0 || x >= SEA || y >= SEA) throw new GameError('Fire inside the sea.');
+  const me = room.players[role];
+  const enemy = room.players[otherRole(role)];
+  if (me.shots.some((s) => s.x === x && s.y === y)) throw new GameError('You already fired there.');
+
+  const cell = y * SEA + x;
+  const ship = enemy.fleet.find((s) => shipCells(s).includes(cell));
+  const hit = !!ship;
+  me.shots.push({ x, y, hit });
+  const sunk = hit && isSunk(ship, me.shots);
+  const hits = me.shots.filter((s) => s.hit).length;
+  me.progress = Math.floor((hits * 100) / FLEET_CELLS);
+  room.lastShot = { by: role, x, y, hit, sunk };
+  if (hits === FLEET_CELLS) {
+    me.finishedAt = now;
+    endMatch(room, role, 'sunk');
+  } else if (!hit) {
+    room.turn = otherRole(role);
+  }
+  bump(room);
+  return { hit, sunk };
+}
+
+function isSunk(ship, shots) {
+  return shipCells(ship).every((c) => shots.some((s) => s.hit && s.y * SEA + s.x === c));
+}
+
+function shipsView(room, role, status) {
+  const me = room.players[role];
+  const opponent = room.players[otherRole(role)];
+  const last = room.lastShot;
+  return {
+    turn: status === 'playing' ? (room.turn === role ? 'me' : 'opponent') : null,
+    // Your own fleet: the one in play, or the one you are ready with.
+    myFleet: me.fleet || me.pendingFleet || [],
+    myShots: me.shots || [],
+    theirShots: opponent?.shots || [],
+    // Enemy ships are revealed one by one as they sink, and all at the end.
+    sunkEnemy: opponent?.fleet ? opponent.fleet.filter((s) => isSunk(s, me.shots || [])) : [],
+    enemyFleet: status === 'finished' && opponent?.fleet ? opponent.fleet : null,
+    lastShot: last ? { ...last, by: last.by === role ? 'me' : 'opponent' } : null,
+  };
+}
+
 /** Stores a player's board during a match. Returns true if anything changed. */
 export function submitBoard(room, role, board, now) {
   const player = room.players[role];
@@ -312,8 +430,10 @@ export function view(room, role, now) {
     solution: status === 'finished' ? room.solution : null,
     winner: room.winner ? (room.winner === role ? 'me' : 'opponent') : null,
     endReason: room.endReason,
-    me: playerView(me, room, status === 'finished', now),
+    // In Ship Battle both players' progress (share of the enemy fleet hit) is public.
+    me: playerView(me, room, status === 'finished' || room.game === 'ships', now),
     opponent: opponent ? playerView(opponent, room, true, now) : null,
+    ships: room.game === 'ships' ? shipsView(room, role, status) : null,
   };
 }
 
