@@ -31,6 +31,8 @@ import com.arcade.sudoku.ui.screens.SoloConnectFourScreen
 import com.arcade.sudoku.ui.screens.SoloDotsScreen
 import com.arcade.sudoku.ui.screens.SoloMemoryScreen
 import com.arcade.sudoku.ui.screens.TurnGameScreen
+import com.arcade.sudoku.ui.screens.SoloWordsScreen
+import com.arcade.sudoku.ui.screens.WordRaceScreen
 import com.arcade.sudoku.ui.screens.GameScreen
 import com.arcade.sudoku.ui.screens.HomeScreen
 import com.arcade.sudoku.ui.screens.LobbyScreen
@@ -44,7 +46,7 @@ import com.arcade.sudoku.ui.art.ReactionBurst
 import com.arcade.sudoku.ui.screens.LocalShipStyle
 import com.arcade.sudoku.ui.theme.AppTheme
 
-private enum class Dest { HOME, PROFILE, BATTLE, SOLO, SHIPS, CONNECT4, DOTS, MEMORY }
+private enum class Dest { HOME, PROFILE, BATTLE, SOLO, SHIPS, CONNECT4, DOTS, MEMORY, WORDS }
 
 @Composable
 fun ArcadeSudokuApp(
@@ -56,6 +58,7 @@ fun ArcadeSudokuApp(
     connectFour: SoloConnectFourViewModel = viewModel(),
     dots: SoloDotsViewModel = viewModel(),
     memory: SoloMemoryViewModel = viewModel(),
+    words: SoloWordsViewModel = viewModel(),
 ) {
     val p = AppTheme.palette
     val profile by app.profile.collectAsStateWithLifecycle()
@@ -66,6 +69,7 @@ fun ArcadeSudokuApp(
     val connectFourState by connectFour.state.collectAsStateWithLifecycle()
     val dotsState by dots.state.collectAsStateWithLifecycle()
     val memoryState by memory.state.collectAsStateWithLifecycle()
+    val wordsState by words.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     var dest by rememberSaveable { mutableStateOf(Dest.HOME) }
     var confirmLeave by rememberSaveable { mutableStateOf(false) }
@@ -113,11 +117,13 @@ fun ArcadeSudokuApp(
                         LobbyScreen(battleState, profile, battle, onLeave = requestLeave)
                     room != null && room.game == GameKind.SHIPS -> ShipsGameScreen(battleState, battle, onLeave = requestLeave)
                     room != null && room.game.turnBased -> TurnGameScreen(battleState, battle, onLeave = requestLeave)
+                    room != null && room.game == GameKind.WORDS -> WordRaceScreen(battleState, battle, onLeave = requestLeave)
                     room != null -> GameScreen(battleState, battle, onLeave = requestLeave)
                     dest == Dest.SHIPS -> SoloShipsScreen(shipsState, ships, onHome = { dest = Dest.HOME })
                     dest == Dest.CONNECT4 -> SoloConnectFourScreen(connectFourState, connectFour, onHome = { dest = Dest.HOME })
                     dest == Dest.DOTS -> SoloDotsScreen(dotsState, dots, onHome = { dest = Dest.HOME })
                     dest == Dest.MEMORY -> SoloMemoryScreen(memoryState, memory, onHome = { dest = Dest.HOME })
+                    dest == Dest.WORDS -> SoloWordsScreen(wordsState, words, onHome = { dest = Dest.HOME })
                     dest == Dest.SOLO -> SoloScreen(soloState, solo, onHome = { dest = Dest.HOME })
                     dest == Dest.PROFILE -> ProfileScreen(
                         profile, battleState.busy, app, battle, updateState,
@@ -150,6 +156,7 @@ fun ArcadeSudokuApp(
                                 GameKind.CONNECT4 -> Dest.CONNECT4
                                 GameKind.DOTS -> Dest.DOTS
                                 GameKind.MEMORY -> Dest.MEMORY
+                                GameKind.WORDS -> Dest.WORDS
                                 GameKind.SUDOKU -> Dest.SOLO
                             }
                         },

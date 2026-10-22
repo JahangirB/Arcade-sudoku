@@ -7,6 +7,7 @@ import { generatePuzzle } from './sudoku.js';
 import * as connect4 from './connect4.js';
 import * as dots from './dots.js';
 import * as memory from './memory.js';
+import * as words from './words.js';
 
 // Empty cells per level; must match Difficulty in the Android app.
 export const DIFFICULTY_HOLES = { beginner: 30, easy: 38, medium: 46, hard: 50, expert: 54, master: 56 };
@@ -26,7 +27,7 @@ export const ROOM_IDLE_MS = 6 * 60 * 60_000;
 export const TURN_ROOM_IDLE_MS = 7 * 24 * 60 * 60_000;
 const CLOSED_ROOM_MS = 60_000;
 
-export const GAMES = ['sudoku', 'ships', 'connect4', 'dots', 'memory'];
+export const GAMES = ['sudoku', 'ships', 'connect4', 'dots', 'memory', 'words'];
 // What apps from before the version check could play; they don't say which games they know.
 const OLD_APP_GAMES = ['sudoku', 'ships'];
 
@@ -330,6 +331,88 @@ function turnView(room, role, status) {
   };
 }
 
+// ---------------------------------------------------------------------------------------
+// Word Race: a race like Sudoku. Both get ready, a countdown starts, and each guesses the same
+// secret word on their own. Fewest tries wins; a tie goes to the faster player. The match ends
+// as soon as the result is certain.
+
+/** Ready (or not ready) for the next Word Race round; it starts when both are ready. */
+export function setWordsReady(room, role, ready, now, random = Math.random) {
+  if (room.status !== 'lobby' && room.status !== 'finished') {
+    throw new GameError('You can only get ready in the lobby or after a match.');
+  }
+  if (!room.players.guest) throw new GameError('Waiting for an opponent to join.');
+  if (room.players[otherRole(role)].left) throw new GameError('Your opponent has left the battle.');
+  room.players[role].ready = ready !== false;
+  const { host, guest } = room.players;
+  if (host.ready && guest.ready) {
+    Object.assign(room, {
+      round: room.round + 1, status: 'started', startAt: now + COUNTDOWN_MS, winner: null, endReason: null,
+      answer: words.randomAnswer(random),
+    });
+    for (const p of [host, guest]) Object.assign(p, { ready: false, finishedAt: null, guesses: [], solved: false });
+  }
+  bump(room);
+}
+
+/** One guess at the secret word. */
+export function guessWord(room, role, word, now) {
+  if (room.game !== 'words' || room.status !== 'started') throw new GameError('The game is not running.');
+  if (now < room.startAt) throw new GameError('Wait for the countdown.');
+  const me = room.players[role];
+  if (me.finishedAt) throw new GameError('You are done with this word.');
+  word = String(word || '').toLowerCase();
+  if (!/^[a-z]{5}$/.test(word)) throw new GameError('Guess a five-letter word.');
+  if (!words.isWord(word)) throw new GameError('Not in the word list.');
+  const colours = words.score(word, room.answer);
+  me.guesses.push({ word, score: colours });
+  if (colours === 'ggggg') {
+    me.solved = true;
+    me.finishedAt = now;
+  } else if (me.guesses.length >= words.TRIES) {
+    me.finishedAt = now;
+  }
+  decideWords(room);
+  bump(room);
+}
+
+/** Ends the round once nobody can change the result any more. */
+function decideWords(room) {
+  const { host, guest } = room.players;
+  const better = (a, b) => {
+    if (a.solved !== b.solved) return a.solved;
+    if (a.guesses.length !== b.guesses.length) return a.guesses.length < b.guesses.length;
+    return a.finishedAt < b.finishedAt;
+  };
+  if (host.finishedAt && guest.finishedAt) {
+    if (!host.solved && !guest.solved) return endMatch(room, null, 'draw');
+    const hostWins = better(host, guest);
+    return endMatch(room, hostWins ? 'host' : 'guest', 'solved');
+  }
+  // One solved: the other can only still win by solving in fewer tries.
+  for (const [solver, other] of [['host', 'guest'], ['guest', 'host']]) {
+    const s = room.players[solver];
+    const o = room.players[other];
+    if (s.solved && !o.finishedAt && o.guesses.length + 1 >= s.guesses.length) return endMatch(room, solver, 'solved');
+  }
+}
+
+function wordsView(room, role, status) {
+  const me = room.players[role];
+  const opponent = room.players[otherRole(role)];
+  const over = status === 'finished';
+  const showWords = status === 'playing' || over;
+  return {
+    tries: words.TRIES,
+    mine: showWords ? (me.guesses || []) : [],
+    // The opponent's colours during the round; their words too once it is over.
+    theirs: showWords && opponent ? (opponent.guesses || []).map((g) => (over ? g : { score: g.score })) : [],
+    meDone: !!me.finishedAt,
+    theyDone: !!opponent?.finishedAt,
+    answer: over && room.answer ? room.answer : null,
+  };
+}
+
 /** Stores a player's board during a match. Returns true if anything changed. */
 export function submitBoard(room, role, board, now) {
   const player = room.players[role];
@@ -509,6 +592,7 @@ export function view(room, role, now) {
     opponent: opponent ? playerView(opponent, room, true, now) : null,
     ships: room.game === 'ships' ? shipsView(room, role, status) : null,
     turns: TURN_GAMES.includes(room.game) ? turnView(room, role, status) : null,
+    words: room.game === 'words' ? wordsView(room, role, status) : null,
   };
 }
 

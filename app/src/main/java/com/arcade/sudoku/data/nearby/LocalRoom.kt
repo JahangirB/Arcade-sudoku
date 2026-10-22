@@ -8,6 +8,8 @@ import com.arcade.sudoku.data.Reaction
 import com.arcade.sudoku.data.toJson
 import com.arcade.sudoku.game.Generator
 import com.arcade.sudoku.game.turns.TurnMatch
+import com.arcade.sudoku.game.words.WordList
+import com.arcade.sudoku.game.words.Words
 import com.arcade.sudoku.game.ships.Fleet
 import com.arcade.sudoku.game.ships.Sea
 import com.arcade.sudoku.game.ships.Ship
@@ -43,6 +45,9 @@ class LocalRoom(
         var pendingFleet: List<Ship>? = null
         var fleet: List<Ship> = emptyList()
         var shots: List<Shot> = emptyList()
+        // Word Race: (word, colours) per guess
+        var guesses: List<Pair<String, String>> = emptyList()
+        var solved = false
     }
 
     var status = "waiting"
@@ -62,6 +67,8 @@ class LocalRoom(
     // Turn games
     private var firstTurn: String? = null
     private var turnMatch: TurnMatch? = null
+    // Word Race
+    private var answer: String? = null
     val players = mutableMapOf<String, Player?>(HOST to newPlayer(hostName, hostAvatar), GUEST to null)
 
     fun playerId(role: String) = players.getValue(role)!!.id
@@ -240,6 +247,94 @@ class LocalRoom(
         version++
     }
 
+    /** Word Race: ready (or not) for the next round; it starts with a countdown when both are. */
+    fun setWordsReady(role: String, ready: Boolean, now: Long, random: Random = Random.Default) {
+        if (status != "lobby" && status != "finished") {
+            throw ApiException("You can only get ready in the lobby or after a match.")
+        }
+        val guest = players[GUEST] ?: throw ApiException("Waiting for an opponent to join.")
+        if (players.getValue(other(role))!!.left) throw ApiException("Your opponent has left the battle.")
+        players.getValue(role)!!.ready = ready
+        if (host.ready && guest.ready) {
+            round++
+            status = "started"
+            startAt = now + COUNTDOWN_MS
+            winner = null
+            endReason = null
+            answer = WordList.random(random)
+            for (p in listOf(host, guest)) {
+                p.ready = false
+                p.finishedAt = null
+                p.guesses = emptyList()
+                p.solved = false
+            }
+        }
+        version++
+    }
+
+    /** Word Race: one guess at the secret word. */
+    fun guessWord(role: String, guess: String, now: Long) {
+        val secret = answer
+        val start = startAt
+        if (game != GameKind.WORDS || status != "started" || secret == null || start == null) throw ApiException("The game is not running.")
+        if (now < start) throw ApiException("Wait for the countdown.")
+        val me = players.getValue(role)!!
+        if (me.finishedAt != null) throw ApiException("You are done with this word.")
+        val word = guess.lowercase()
+        if (!Regex("[a-z]{5}").matches(word)) throw ApiException("Guess a five-letter word.")
+        if (!WordList.isWord(word)) throw ApiException("Not in the word list.")
+        val colours = Words.score(word, secret)
+        me.guesses = me.guesses + (word to colours)
+        if (colours == "ggggg") {
+            me.solved = true
+            me.finishedAt = now
+        } else if (me.guesses.size >= Words.TRIES) {
+            me.finishedAt = now
+        }
+        decideWords()
+        version++
+    }
+
+    /** Ends the round once nobody can change the result any more (as on the server). */
+    private fun decideWords() {
+        val h = host
+        val g = players.getValue(GUEST)!!
+        val hDone = h.finishedAt
+        val gDone = g.finishedAt
+        if (hDone != null && gDone != null) {
+            if (!h.solved && !g.solved) return endMatch(null, "draw")
+            val hostWins = when {
+                h.solved != g.solved -> h.solved
+                h.guesses.size != g.guesses.size -> h.guesses.size < g.guesses.size
+                else -> hDone < gDone
+            }
+            return endMatch(if (hostWins) HOST else GUEST, "solved")
+        }
+        for ((solver, otherRole) in listOf(HOST to GUEST, GUEST to HOST)) {
+            val s = players.getValue(solver)!!
+            val o = players.getValue(otherRole)!!
+            if (s.solved && o.finishedAt == null && o.guesses.size + 1 >= s.guesses.size) return endMatch(solver, "solved")
+        }
+    }
+
+    private fun wordsView(role: String, shown: String): JSONObject {
+        val me = players.getValue(role)!!
+        val opponent = players[other(role)]
+        val over = shown == "finished"
+        val showWords = shown == "playing" || over
+        fun rows(p: Player?, withWords: Boolean) = org.json.JSONArray(
+            if (!showWords || p == null) emptyList()
+            else p.guesses.map { (w, sc) -> JSONObject().put("score", sc).apply { if (withWords) put("word", w) } },
+        )
+        return JSONObject()
+            .put("tries", Words.TRIES)
+            .put("mine", rows(me, true))
+            .put("theirs", rows(opponent, over))
+            .put("meDone", me.finishedAt != null)
+            .put("theyDone", opponent?.finishedAt != null)
+            .put("answer", if (over) answer ?: JSONObject.NULL else JSONObject.NULL)
+    }
+
     /** Stores a board during a match; returns true if anything changed. */
     fun submitBoard(role: String, board: String, now: Long): Boolean {
         val player = players.getValue(role)!!
@@ -344,6 +439,7 @@ class LocalRoom(
             .put("opponent", opponent?.let { playerView(it, true, now) } ?: JSONObject.NULL)
             .put("ships", if (game == GameKind.SHIPS) shipsView(role, shown) else JSONObject.NULL)
             .put("turns", if (game.turnBased) turnsView(role, shown) else JSONObject.NULL)
+            .put("words", if (game == GameKind.WORDS) wordsView(role, shown) else JSONObject.NULL)
     }
 
     private fun turnsView(role: String, shown: String): JSONObject {

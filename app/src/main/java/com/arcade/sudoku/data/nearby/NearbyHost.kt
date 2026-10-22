@@ -72,7 +72,11 @@ class NearbyHost(context: Context, private val hostName: String, private val hos
 
     override suspend fun ready(code: String, playerId: String, ready: Boolean, difficulty: Difficulty?) =
         local {
-            if (game.turnBased) setTurnReady(LocalRoom.HOST, ready, now()) else setReady(LocalRoom.HOST, ready, difficulty, now())
+            when {
+                game.turnBased -> setTurnReady(LocalRoom.HOST, ready, now())
+                game == GameKind.WORDS -> setWordsReady(LocalRoom.HOST, ready, now())
+                else -> setReady(LocalRoom.HOST, ready, difficulty, now())
+            }
         }
 
     override suspend fun sync(code: String, playerId: String, board: String?, version: Int?) =
@@ -89,6 +93,9 @@ class NearbyHost(context: Context, private val hostName: String, private val hos
 
     override suspend fun move(code: String, playerId: String, move: JSONObject) =
         local { move(LocalRoom.HOST, move, now()) }
+
+    override suspend fun guess(code: String, playerId: String, word: String) =
+        local { guessWord(LocalRoom.HOST, word, now()) }
 
     override suspend fun leave(code: String, playerId: String) {
         withContext(Dispatchers.Main.immediate) {
@@ -185,11 +192,14 @@ class NearbyHost(context: Context, private val hostName: String, private val hos
                     r.setShipsReady(LocalRoom.GUEST, msg.optBoolean("ready", true), parseFleet(msg.optJSONArray("fleet")), now)
                 } else if (r.game.turnBased) {
                     r.setTurnReady(LocalRoom.GUEST, msg.optBoolean("ready", true), now)
+                } else if (r.game == GameKind.WORDS) {
+                    r.setWordsReady(LocalRoom.GUEST, msg.optBoolean("ready", true), now)
                 } else {
                     r.setReady(LocalRoom.GUEST, msg.optBoolean("ready", true), Difficulty.from(msg.optString("difficulty")), now)
                 }
                 "fire" -> r.fire(LocalRoom.GUEST, msg.optInt("x", -1), msg.optInt("y", -1), now)
                 "move" -> r.move(LocalRoom.GUEST, msg.optJSONObject("move") ?: JSONObject(), now)
+                "guess" -> r.guessWord(LocalRoom.GUEST, msg.optString("word"), now)
                 "board" -> r.submitBoard(LocalRoom.GUEST, msg.optString("board"), now)
                 "emoji" -> r.sendEmoji(
                     LocalRoom.GUEST,

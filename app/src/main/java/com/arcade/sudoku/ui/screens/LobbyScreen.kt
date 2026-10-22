@@ -132,7 +132,7 @@ fun LobbyScreen(state: BattleUiState, profile: Profile, vm: BattleViewModel, onL
                     onShuffle = vm::shuffleFleet,
                     onReady = vm::readyShips,
                 )
-            } else if (room.game.turnBased) {
+            } else if (room.game.readyOnly) {
                 TurnReadyCard(room, state.busy, vm::readyTurns)
             } else {
                 AppCard("Choose the level") {

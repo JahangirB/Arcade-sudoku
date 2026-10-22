@@ -277,6 +277,7 @@ private fun GameSheet(
             }
             kind == GameKind.SUDOKU -> SecondaryButton("Play solo", onNewSudoku)
             kind == GameKind.MEMORY -> SecondaryButton("Play alone", onSolo)
+            kind == GameKind.WORDS -> SecondaryButton("Today's word or practice", onSolo)
             else -> SecondaryButton("Play the computer", onSolo)
         }
         SecondaryButton("Online with a code or nearby", onBattle)

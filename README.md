@@ -41,6 +41,12 @@ quick **reactions** (👍 👏 🔥 😂 😮 😅 🤔 😎 ❤️ ⏰). The fi
   yours and you go again. Most pairs wins. Play alone (fewest flips) or with your partner; the
   server keeps the cards hidden, so neither phone can peek.
 
+- **Word Race:** find the secret five-letter word in six tries; letters turn green, yellow or
+  grey. Race your partner on the same word: you see each other's colours, never the letters, and
+  fewest tries wins (a tie goes to the faster). Alone: **today's word** (the same for everyone,
+  new each day) or unlimited **practice**. Word lists from SCOWL (see
+  `app/src/main/assets/words/SCOWL-Copyright.txt`).
+
 **Play across time zones.** Connect Four, Dots & Boxes and Memory Pairs don't need you both
 online at once: close the app after your move and your partner gets a **"Your turn"**
 notification (Cloudflare server with invitations set up). Tap it to make your move. Turn games
@@ -314,7 +320,7 @@ Requires Android 8.0 (API 26) or newer.
 | --- | --- |
 | `backend/Code.gs` | Apps Script web app: rooms, puzzle generator, start sync, progress, winner |
 | `backend/test/` | Node tests that run `Code.gs` against mocked Apps Script services |
-| `backend/cloudflare/` | Cloudflare Worker: one Durable Object per room (`src/room.js`: Sudoku, Ship Battle and turn-game rules; `src/connect4.js`, `src/dots.js`, `src/memory.js`) and a Directory object for invitations (`src/directory.js`, `src/push.js`), with unit and end-to-end tests |
+| `backend/cloudflare/` | Cloudflare Worker: one Durable Object per room (`src/room.js`: Sudoku, Ship Battle and turn-game rules; `src/connect4.js`, `src/dots.js`, `src/memory.js`, `src/words.js`) and a Directory object for invitations (`src/directory.js`, `src/push.js`), with unit and end-to-end tests |
 | `app/src/main/java/com/arcade/sudoku/data/` | Server clients (`BattleApi` for Apps Script, `CloudflareBattle`), response models, invites, profile, updater |
 | `app/src/main/java/com/arcade/sudoku/game/ships/` | Ship Battle rules, random fleets and the computer opponent |
 | `app/src/main/java/com/arcade/sudoku/game/connect4/`, `dots/`, `memory/`, `turns/` | Turn games: Connect Four, Dots & Boxes and Memory Pairs rules, the computer opponents, and the shared move interface |

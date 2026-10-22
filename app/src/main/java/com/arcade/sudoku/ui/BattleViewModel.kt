@@ -8,6 +8,8 @@ import com.arcade.sudoku.data.BattleBackend
 import com.arcade.sudoku.data.Difficulty
 import com.arcade.sudoku.data.GameKind
 import com.arcade.sudoku.game.connect4.ConnectFour
+import com.arcade.sudoku.game.words.WordList
+import com.arcade.sudoku.game.words.Words
 import com.arcade.sudoku.data.Hello
 import com.arcade.sudoku.data.SavedPartner
 import com.arcade.sudoku.data.Invite
@@ -71,6 +73,9 @@ data class BattleUiState(
     val fleetDraft: List<Ship> = Fleet.random(),
     /** Ship Battle: a shot is on its way. */
     val firing: Boolean = false,
+    /** Word Race: the letters typed for the next guess, and the round they belong to. */
+    val wordInput: String = "",
+    val wordRound: Int = -1,
     /** Nearby hosts found while looking for a game. */
     val nearbyHosts: List<FoundHost> = emptyList(),
     val scanning: Boolean = false,
@@ -455,6 +460,40 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Word Race: type a letter of the next guess. */
+    fun typeLetter(letter: Char) = _state.update {
+        if (it.wordInput.length < Words.LENGTH) it.copy(wordInput = it.wordInput + letter.lowercaseChar()) else it
+    }
+
+    fun deleteLetter() = _state.update { it.copy(wordInput = it.wordInput.dropLast(1)) }
+
+    /** Word Race: send the typed word as a guess; it stays typed if the server refuses it. */
+    fun submitWord() {
+        val s = _state.value
+        val room = s.room ?: return
+        val id = playerId ?: return
+        val b = backend ?: return
+        val word = s.wordInput
+        if (s.firing || word.length < Words.LENGTH) return
+        if (!WordList.isWord(word)) return showMessage("Not in the word list.")
+        _state.update { it.copy(firing = true) }
+        viewModelScope.launch {
+            try {
+                val sentAt = System.currentTimeMillis()
+                applyResponse(b.guess(room.code, id, word), sentAt)
+                _state.update { it.copy(wordInput = "") }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: ApiException) {
+                if (e.fatal) endSession(e.message) else showMessage(e.message)
+            } catch (e: IOException) {
+                showMessage("Network problem, try again.")
+            } finally {
+                _state.update { it.copy(firing = false) }
+            }
+        }
+    }
+
     /** Ship Battle: fire at the opponent's sea. */
     fun fire(x: Int, y: Int) {
         val s = _state.value
@@ -663,6 +702,7 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { s ->
             var next = s.copy(room = room, clockOffsetMs = offset)
             if (newReaction != null) next = next.copy(opponentReaction = newReaction)
+            if (room.game == GameKind.WORDS && room.round != next.wordRound) next = next.copy(wordInput = "", wordRound = room.round)
             val puzzle = room.puzzle
             if (puzzle != null && room.round != loadedRound) {
                 loadedRound = room.round

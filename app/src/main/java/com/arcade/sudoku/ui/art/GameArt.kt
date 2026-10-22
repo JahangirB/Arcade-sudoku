@@ -17,6 +17,7 @@ val GameKind.color: Color
         GameKind.CONNECT4 -> Color(0xFFE8505B)
         GameKind.DOTS -> Color(0xFF7B6CF0)
         GameKind.MEMORY -> Color(0xFFF2A33A)
+        GameKind.WORDS -> Color(0xFF20A47B)
     }
 
 /** One line describing each game, for its tile and play sheet. */
@@ -27,6 +28,7 @@ val GameKind.tagline: String
         GameKind.CONNECT4 -> "Four in a row wins"
         GameKind.DOTS -> "Close a box, go again"
         GameKind.MEMORY -> "Find the pairs"
+        GameKind.WORDS -> "Same word, who finds it first?"
     }
 
 /** How to play, shown from the play sheet and the in-game Rules button. */
@@ -43,6 +45,9 @@ val GameKind.rules: String
             "to claim it, then draw again. When all 16 boxes are taken, the most boxes wins."
         GameKind.MEMORY -> "16 cards lie face down: 8 pairs of pictures. Flip two cards on your turn. A pair is yours " +
             "and you go again; otherwise they turn back and your partner plays. Most pairs wins."
+        GameKind.WORDS -> "Find the secret five-letter word in six tries. After each guess the letters turn green " +
+            "(right letter, right place), yellow (in the word, elsewhere) or grey (not in the word). In a race you both " +
+            "get the same word and see each other's colours, never the letters. Fewest tries wins; on a tie, the faster."
     }
 
 /** The game's icon in white (or [tint]), drawn to fill this area. */
@@ -78,6 +83,11 @@ fun DrawScope.drawGameIcon(kind: GameKind, tint: Color) = scale(size.minDimensio
             p.at(8.5, 12.5, -0.17, 1) { p.withAlpha(0.5) { p.rr(3, 5, 11, 15, 2.5, tint) } }
             p.at(15.5, 11.5, 0.14, 1) { p.rr(10, 4, 11, 15, 2.5, null, tint, 2) }
             p.circle(15.5, 11.5, 2.3, tint)
+        }
+        GameKind.WORDS -> {
+            // Two rows of letter tiles: the top guess part right, the bottom one solved.
+            for (i in 0 until 3) p.rr(2.5 + i * 7, 4, 5.5, 6.5, 1.5, if (i == 1) tint else null, tint, 1.6)
+            for (i in 0 until 3) p.rr(2.5 + i * 7, 13, 5.5, 6.5, 1.5, tint)
         }
     }
 }
