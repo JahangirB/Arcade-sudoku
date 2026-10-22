@@ -261,6 +261,8 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
 
     /** "Play" on an invitation: join the partner's room with the code from the notification. */
     fun acceptInvite(code: String, game: GameKind) {
+        // Tapping "your turn" while already in that room needs nothing more.
+        if (_state.value.room?.code == code) return
         val partner = store.profile.value.partner
         if (partner == null) {
             _state.update { it.copy(joinCode = code) }
@@ -413,18 +415,34 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Connect Four: drop a disc into [col]. */
     fun dropDisc(col: Int) {
+        val board = _state.value.room?.turns?.board ?: return
+        if (ConnectFour.landing(board, col) != null) playMove(JSONObject().put("col", col))
+    }
+
+    /** Dots & Boxes: draw [line]. */
+    fun drawLine(line: Int) {
+        val lines = _state.value.room?.turns?.lines ?: return
+        if (lines.getOrNull(line) == '.') playMove(JSONObject().put("line", line))
+    }
+
+    /** Memory Pairs: flip [card]. */
+    fun flipCard(card: Int) {
+        val turns = _state.value.room?.turns ?: return
+        if (turns.owners?.getOrNull(card) == '.') playMove(JSONObject().put("card", card))
+    }
+
+    /** Turn games: send one move when it is this player's turn. */
+    private fun playMove(move: JSONObject) {
         val s = _state.value
         val room = s.room ?: return
         val id = playerId ?: return
         val b = backend ?: return
-        val turns = room.turns ?: return
-        val board = turns.board ?: return
-        if (s.firing || turns.turn != "me" || ConnectFour.landing(board, col) == null) return
+        if (s.firing || room.turns?.turn != "me") return
         _state.update { it.copy(firing = true) }
         viewModelScope.launch {
             try {
                 val sentAt = System.currentTimeMillis()
-                applyResponse(b.move(room.code, id, JSONObject().put("col", col)), sentAt)
+                applyResponse(b.move(room.code, id, move), sentAt)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: ApiException) {
@@ -504,6 +522,10 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
     /** Called by the UI when the app goes to or comes back from the background. */
     fun setForeground(value: Boolean) {
         foreground.value = value
+        // In a turn game, closing the app disconnects so the server can send "your turn" pushes.
+        if (_state.value.room?.game?.turnBased == true) {
+            if (value) backend?.resume() else backend?.pause()
+        }
     }
 
     /** Polling servers (Apps Script): ask for news every few seconds. */

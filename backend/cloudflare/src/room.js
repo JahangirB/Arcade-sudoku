@@ -5,6 +5,8 @@
 
 import { generatePuzzle } from './sudoku.js';
 import * as connect4 from './connect4.js';
+import * as dots from './dots.js';
+import * as memory from './memory.js';
 
 // Empty cells per level; must match Difficulty in the Android app.
 export const DIFFICULTY_HOLES = { beginner: 30, easy: 38, medium: 46, hard: 50, expert: 54, master: 56 };
@@ -20,9 +22,11 @@ export const INACTIVE_FORFEIT_MS = 45_000;
 export const LOBBY_ABANDON_MS = 5 * 60_000;
 // A room with nobody connected is deleted after this long (1 minute once closed).
 export const ROOM_IDLE_MS = 6 * 60 * 60_000;
+// Turn games can go on across time zones, a move now and then: keep their rooms a week.
+export const TURN_ROOM_IDLE_MS = 7 * 24 * 60 * 60_000;
 const CLOSED_ROOM_MS = 60_000;
 
-export const GAMES = ['sudoku', 'ships', 'connect4'];
+export const GAMES = ['sudoku', 'ships', 'connect4', 'dots', 'memory'];
 // What apps from before the version check could play; they don't say which games they know.
 const OLD_APP_GAMES = ['sudoku', 'ships'];
 
@@ -271,10 +275,13 @@ function shipsView(room, role, status) {
 }
 
 // ---------------------------------------------------------------------------------------
-// Turn games (Connect Four): both players get ready, then take turns making moves. The
-// player who starts alternates from round to round.
+// Turn games (Connect Four, Dots & Boxes, Memory Pairs): both players get ready, then take
+// turns making moves. Each game's own rules live in its module (start, play, view); the
+// player who starts alternates from round to round. A player may close the app between
+// moves: turn games are never forfeited for being away, the room just waits.
 
-export const TURN_GAMES = ['connect4'];
+const TURN_RULES = { connect4, dots, memory };
+export const TURN_GAMES = Object.keys(TURN_RULES);
 
 /** Ready (or not ready) for the next round of a turn game; it starts when both are ready. */
 export function setTurnReady(room, role, ready, now, random = Math.random) {
@@ -289,47 +296,37 @@ export function setTurnReady(room, role, ready, now, random = Math.random) {
     const first = room.firstTurn ? otherRole(room.firstTurn) : (random() < 0.5 ? 'host' : 'guest');
     Object.assign(room, {
       round: room.round + 1, status: 'started', startAt: now, winner: null, endReason: null,
-      firstTurn: first, turn: first, board: connect4.emptyBoard(), lastMove: null, winLine: null,
+      firstTurn: first, turn: first, turnState: TURN_RULES[room.game].start(random),
     });
     for (const p of [host, guest]) Object.assign(p, { ready: false, finishedAt: null });
   }
   bump(room);
 }
 
-/** Plays `move` ({ col } in Connect Four) for `role`. */
+/** Plays `move` for `role`: { col } in Connect Four, { line } in Dots & Boxes, { card } in Memory Pairs. */
 export function makeMove(room, role, move, now) {
   if (!TURN_GAMES.includes(room.game) || room.status !== 'started') throw new GameError('The game is not running.');
   if (room.turn !== role) throw new GameError("It's not your turn.");
   let result;
   try {
-    result = connect4.drop(room.board, Number(move?.col), role[0]);
+    result = TURN_RULES[room.game].play(room.turnState, role[0], move);
   } catch (err) {
     throw new GameError(err.message);
   }
-  room.board = result.board;
-  room.lastMove = { by: role, cell: result.cell };
-  const line = connect4.winLine(room.board, result.cell);
-  if (line) {
-    room.winLine = line;
-    room.players[role].finishedAt = now;
-    endMatch(room, role, 'four');
-  } else if (connect4.isFull(room.board)) {
-    endMatch(room, null, 'draw');
-  } else {
+  if (result.over) {
+    const winner = result.winner === 'h' ? 'host' : result.winner === 'g' ? 'guest' : null;
+    if (winner) room.players[winner].finishedAt = now;
+    endMatch(room, winner, winner ? result.reason : 'draw');
+  } else if (!result.again) {
     room.turn = otherRole(role);
   }
   bump(room);
 }
 
-/** The board from one player's side: 'm' for their discs, 'o' for the opponent's. */
 function turnView(room, role, status) {
-  const mine = role[0];
-  const last = room.lastMove;
   return {
     turn: status === 'playing' ? (room.turn === role ? 'me' : 'opponent') : null,
-    board: room.board ? [...room.board].map((c) => (c === '.' ? '.' : c === mine ? 'm' : 'o')).join('') : null,
-    winLine: room.winLine || null,
-    lastMove: last ? { by: last.by === role ? 'me' : 'opponent', cell: last.cell } : null,
+    ...(room.turnState ? TURN_RULES[room.game].view(room.turnState, role[0]) : {}),
   };
 }
 
@@ -426,9 +423,9 @@ export function checkTimers(room, now) {
 
   if (roles.every((r) => !room.players[r].connected)) {
     const awayFor = Math.min(...roles.map(away));
-    if (awayFor >= (room.status === 'closed' ? CLOSED_ROOM_MS : ROOM_IDLE_MS)) return 'expired';
+    if (awayFor >= idleLimit(room)) return 'expired';
   }
-  if (room.status === 'closed') return null;
+  if (room.status === 'closed' || TURN_GAMES.includes(room.game)) return null;
 
   if (room.status === 'started' && now >= room.startAt) {
     // The player away the longest loses; time before the start does not count.
@@ -462,9 +459,9 @@ export function nextDeadline(room) {
   const deadlines = [];
   if (roles.every((r) => !room.players[r].connected)) {
     const lastAway = Math.max(...roles.map((r) => room.players[r].awaySince));
-    deadlines.push(lastAway + (room.status === 'closed' ? CLOSED_ROOM_MS : ROOM_IDLE_MS));
+    deadlines.push(lastAway + idleLimit(room));
   }
-  if (room.status !== 'closed') {
+  if (room.status !== 'closed' && !TURN_GAMES.includes(room.game)) {
     for (const role of roles) {
       const player = room.players[role];
       if (player.connected || player.left) continue;
@@ -476,6 +473,11 @@ export function nextDeadline(room) {
     }
   }
   return deadlines.length ? Math.min(...deadlines) : null;
+}
+
+function idleLimit(room) {
+  if (room.status === 'closed') return CLOSED_ROOM_MS;
+  return TURN_GAMES.includes(room.game) ? TURN_ROOM_IDLE_MS : ROOM_IDLE_MS;
 }
 
 function bump(room) {

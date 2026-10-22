@@ -73,7 +73,7 @@ object Push {
             .build()
         FirebaseApp.initializeApp(context, options)
         val channel = NotificationChannel(CHANNEL, "Game invitations", NotificationManager.IMPORTANCE_HIGH).apply {
-            description = "When your partner invites you to play, or answers your invitation"
+            description = "When your partner invites you to play, answers your invitation, or it is your turn"
         }
         context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
@@ -87,6 +87,7 @@ object Push {
         _events.tryEmit(event)
         when (event.type) {
             "invite" -> showInvite(context, event)
+            "your_turn" -> showYourTurn(context, event)
             "invite_reply" -> if (!event.accepted) showDeclined(context, event)
         }
     }
@@ -113,6 +114,24 @@ object Push {
             .addAction(0, "Decline", PendingIntent.getBroadcast(context, id, decline, FLAGS))
             // An unanswered invitation goes stale.
             .setTimeoutAfter(10 * 60_000L)
+            .build()
+        notify(context, id, notification)
+    }
+
+    /** A turn game is waiting for this player's move; tapping it opens the game. */
+    private fun showYourTurn(context: Context, event: PushEvent) {
+        val id = notificationId(event.fromDevice) + 2
+        val open = Intent(context, MainActivity::class.java)
+            .setAction(ACTION_ACCEPT)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            .withInvite(event, id)
+        val notification = NotificationCompat.Builder(context, CHANNEL)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("Your turn in ${event.game.label}")
+            .setContentText("${event.fromName} made a move. Tap to play yours.")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(PendingIntent.getActivity(context, id, open, FLAGS))
             .build()
         notify(context, id, notification)
     }

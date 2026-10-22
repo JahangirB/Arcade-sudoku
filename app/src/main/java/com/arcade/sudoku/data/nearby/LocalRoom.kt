@@ -7,7 +7,7 @@ import com.arcade.sudoku.data.GameKind
 import com.arcade.sudoku.data.Reaction
 import com.arcade.sudoku.data.toJson
 import com.arcade.sudoku.game.Generator
-import com.arcade.sudoku.game.connect4.ConnectFour
+import com.arcade.sudoku.game.turns.TurnMatch
 import com.arcade.sudoku.game.ships.Fleet
 import com.arcade.sudoku.game.ships.Sea
 import com.arcade.sudoku.game.ships.Ship
@@ -59,11 +59,9 @@ class LocalRoom(
     private var emojiSeq = 0
     private var turn: String? = null
     private var lastShot: Pair<String, Shot>? = null
-    // Turn games (Connect Four)
+    // Turn games
     private var firstTurn: String? = null
-    private var c4Board: String? = null
-    private var winLine: List<Int>? = null
-    private var lastMove: Pair<String, Int>? = null
+    private var turnMatch: TurnMatch? = null
     val players = mutableMapOf<String, Player?>(HOST to newPlayer(hostName, hostAvatar), GUEST to null)
 
     fun playerId(role: String) = players.getValue(role)!!.id
@@ -209,9 +207,7 @@ class LocalRoom(
             endReason = null
             firstTurn = first
             turn = first
-            c4Board = ConnectFour.EMPTY
-            winLine = null
-            lastMove = null
+            turnMatch = TurnMatch.start(game, random)
             for (p in listOf(host, guest)) {
                 p.ready = false
                 p.finishedAt = null
@@ -220,25 +216,26 @@ class LocalRoom(
         version++
     }
 
-    /** Connect Four: drops [role]'s disc into [col]. */
-    fun move(role: String, col: Int, now: Long) {
-        if (!game.turnBased || status != "started") throw ApiException("The game is not running.")
+    /** Turn games: plays [move] ({"col"}, {"line"} or {"card"}) for [role]. */
+    fun move(role: String, move: JSONObject, now: Long) {
+        val match = turnMatch
+        if (!game.turnBased || status != "started" || match == null) throw ApiException("The game is not running.")
         if (turn != role) throw ApiException("It's not your turn.")
-        val board = c4Board!!
-        if (col !in 0 until ConnectFour.COLS) throw ApiException("Pick a column on the board.")
-        val cell = ConnectFour.landing(board, col) ?: throw ApiException("That column is full.")
-        val next = ConnectFour.drop(board, cell, role[0])
-        c4Board = next
-        lastMove = role to cell
-        val line = ConnectFour.winLine(next, cell)
-        when {
-            line != null -> {
-                winLine = line
-                players.getValue(role)!!.finishedAt = now
-                endMatch(role, "four")
+        val result = try {
+            match.play(role[0], move)
+        } catch (e: IllegalArgumentException) {
+            throw ApiException(e.message ?: "That move isn't allowed.")
+        }
+        if (result.over) {
+            val winnerRole = when (result.winner) {
+                'h' -> HOST
+                'g' -> GUEST
+                else -> null
             }
-            ConnectFour.isFull(next) -> endMatch(null, "draw")
-            else -> turn = other(role)
+            winnerRole?.let { players.getValue(it)!!.finishedAt = now }
+            endMatch(winnerRole, if (winnerRole != null) result.reason ?: "won" else "draw")
+        } else if (!result.again) {
+            turn = other(role)
         }
         version++
     }
@@ -349,18 +346,10 @@ class LocalRoom(
             .put("turns", if (game.turnBased) turnsView(role, shown) else JSONObject.NULL)
     }
 
-    /** The board from [role]'s side: 'm' for their discs, 'o' for the opponent's. */
-    private fun turnsView(role: String, shown: String): JSONObject = JSONObject()
-        .put("turn", if (shown == "playing") (if (turn == role) "me" else "opponent") else JSONObject.NULL)
-        .put(
-            "board",
-            c4Board?.map { c -> if (c == '.') '.' else if (c == role[0]) 'm' else 'o' }?.joinToString("") ?: JSONObject.NULL,
-        )
-        .put("winLine", winLine?.let { org.json.JSONArray(it) } ?: JSONObject.NULL)
-        .put(
-            "lastMove",
-            lastMove?.let { (by, cell) -> JSONObject().put("by", if (by == role) "me" else "opponent").put("cell", cell) } ?: JSONObject.NULL,
-        )
+    private fun turnsView(role: String, shown: String): JSONObject {
+        val json = turnMatch?.view(role[0]) ?: JSONObject()
+        return json.put("turn", if (shown == "playing") (if (turn == role) "me" else "opponent") else JSONObject.NULL)
+    }
 
     private fun shipsView(role: String, shown: String): JSONObject {
         val me = players.getValue(role)!!

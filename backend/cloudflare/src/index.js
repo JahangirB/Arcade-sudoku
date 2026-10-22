@@ -18,7 +18,7 @@ import { createPushSender, serviceAccountText } from './push.js';
 import {
   GameError, checkTimers, createRoom, joinRoom, leave, nextDeadline, normalizeCode,
   fire, sendEmoji, setConnected, setReady, setShipsReady, submitBoard, view,
-  GAMES, TURN_GAMES, makeMove, setTurnReady,
+  GAMES, TURN_GAMES, makeMove, otherRole, setTurnReady,
 } from './room.js';
 
 const API_VERSION = 1;
@@ -138,6 +138,21 @@ export class Room extends DurableObject {
     return new Response(null, { status: 101, webSocket: client });
   }
 
+  /** In a turn game, tells a player who has closed the app that it is their move now. */
+  async notifyTurn() {
+    const room = this.room;
+    if (room.status !== 'started' || !this.env.DIRECTORY) return;
+    const next = room.players[room.turn];
+    const mover = room.players[otherRole(room.turn)];
+    if (next.connected || !next.deviceId || !mover?.deviceId) return;
+    try {
+      await this.env.DIRECTORY.get(this.env.DIRECTORY.idFromName('directory'))
+        .notify('your_turn', { from: mover.deviceId, to: next.deviceId, code: room.code, game: room.game });
+    } catch {
+      // A missed reminder must never break the game.
+    }
+  }
+
   /** Tells the directory that these two phones played together, so they may invite each other. */
   async rememberPartners() {
     const host = this.room.players.host?.deviceId;
@@ -199,6 +214,7 @@ export class Room extends DurableObject {
       await this.save();
       this.send(ws, role, { re: msg.id });
       this.broadcast(ws);
+      if (msg.type === 'move') await this.notifyTurn();
     } catch (err) {
       ws.send(JSON.stringify({ type: 'error', re: msg.id, error: err.message, fatal: !!err.fatal, reason: err.reason || null }));
     }

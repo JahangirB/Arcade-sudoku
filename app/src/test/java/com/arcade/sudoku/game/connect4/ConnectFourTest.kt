@@ -5,6 +5,7 @@ import com.arcade.sudoku.data.GameKind
 import com.arcade.sudoku.data.RoomStatus
 import com.arcade.sudoku.data.nearby.LocalRoom
 import com.arcade.sudoku.data.parseRoom
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
@@ -72,8 +73,8 @@ class ConnectFourTest {
         assertEquals(RoomStatus.PLAYING, first.status)
         val starter = if (first.turns!!.turn == "me") LocalRoom.HOST else LocalRoom.GUEST
         val other = LocalRoom.other(starter)
-        assertThrows(ApiException::class.java) { room.move(other, 0, 0) }
-        for (col in listOf(0, 1, 0, 1, 0, 1, 0)) room.move(if (col == 0) starter else other, col, 0)
+        assertThrows(ApiException::class.java) { room.move(other, JSONObject().put("col", 0), 0) }
+        for (col in listOf(0, 1, 0, 1, 0, 1, 0)) room.move(if (col == 0) starter else other, JSONObject().put("col", col), 0)
         val view = parseRoom(room.view(starter, 0))
         assertEquals(RoomStatus.FINISHED, view.status)
         assertEquals("me", view.winner)

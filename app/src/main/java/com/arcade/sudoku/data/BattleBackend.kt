@@ -40,6 +40,10 @@ interface BattleBackend {
     /** Drops any live connection. */
     fun close() {}
 
+    /** Disconnects for now (the app went to the background) without leaving; [resume] reconnects. */
+    fun pause() {}
+    fun resume() {}
+
     companion object {
         /** The games this app can play, sent when joining so a server can ask older apps to update. */
         val SUPPORTED_GAMES: String = GameKind.entries.joinToString(",") { it.key }

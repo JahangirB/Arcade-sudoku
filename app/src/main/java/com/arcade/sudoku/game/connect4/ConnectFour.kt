@@ -1,5 +1,9 @@
 package com.arcade.sudoku.game.connect4
 
+import com.arcade.sudoku.game.turns.TurnMatch
+import com.arcade.sudoku.game.turns.TurnResult
+import org.json.JSONArray
+import org.json.JSONObject
 import kotlin.random.Random
 
 /**
@@ -129,4 +133,32 @@ class C4Computer(private val level: C4Level, private val random: Random = Random
         val DIRECTIONS = listOf(0 to 1, 1 to 0, 1 to 1, 1 to -1)
         val WEIGHT = intArrayOf(0, 1, 5, 40, 0)
     }
+}
+
+/** A Connect Four round for [TurnMatch]: moves are {"col": n}. */
+class C4Match : TurnMatch {
+    var board = ConnectFour.EMPTY
+        private set
+    var winLine: List<Int>? = null
+        private set
+    private var last: Pair<Char, Int>? = null
+
+    override fun play(mark: Char, move: JSONObject): TurnResult {
+        val col = move.optInt("col", -1)
+        require(col in 0 until ConnectFour.COLS) { "Pick a column on the board." }
+        val cell = requireNotNull(ConnectFour.landing(board, col)) { "That column is full." }
+        board = ConnectFour.drop(board, cell, mark)
+        last = mark to cell
+        val line = ConnectFour.winLine(board, cell)
+        if (line != null) {
+            winLine = line
+            return TurnResult(again = false, over = true, winner = mark, reason = "four")
+        }
+        return TurnResult(again = false, over = ConnectFour.isFull(board), reason = "draw")
+    }
+
+    override fun view(mark: Char): JSONObject = JSONObject()
+        .put("board", TurnMatch.side(board, mark))
+        .put("winLine", winLine?.let { JSONArray(it) } ?: JSONObject.NULL)
+        .put("lastMove", last?.let { (by, cell) -> TurnMatch.lastMove(by, mark, "cell", cell) } ?: JSONObject.NULL)
 }

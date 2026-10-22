@@ -43,3 +43,32 @@ export function winLine(board, cell) {
 export function isFull(board) {
   return !board.includes('.');
 }
+
+// The turn-game interface room.js uses: start, play and view. A mark is a player's
+// one-letter id ('h' host, 'g' guest).
+
+export function start() {
+  return { board: emptyBoard(), winLine: null, last: null };
+}
+
+/** Plays { col } for `mark`. Returns { again, over, winner, reason }. */
+export function play(state, mark, move) {
+  const { board, cell } = drop(state.board, Number(move?.col), mark);
+  state.board = board;
+  state.last = { mark, cell };
+  const line = winLine(board, cell);
+  if (line) {
+    state.winLine = line;
+    return { again: false, over: true, winner: mark, reason: 'four' };
+  }
+  return { again: false, over: isFull(board), winner: null, reason: 'draw' };
+}
+
+/** The board from one player's side: 'm' for their discs, 'o' for the opponent's. */
+export function view(state, mark) {
+  return {
+    board: [...state.board].map((c) => (c === '.' ? '.' : c === mark ? 'm' : 'o')).join(''),
+    winLine: state.winLine,
+    lastMove: state.last ? { by: state.last.mark === mark ? 'me' : 'opponent', cell: state.last.cell } : null,
+  };
+}

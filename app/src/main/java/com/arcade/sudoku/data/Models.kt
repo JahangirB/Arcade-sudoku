@@ -9,10 +9,12 @@ import org.json.JSONObject
 enum class GameKind(val key: String, val label: String) {
     SUDOKU("sudoku", "Sudoku"),
     SHIPS("ships", "Ship Battle"),
-    CONNECT4("connect4", "Connect Four");
+    CONNECT4("connect4", "Connect Four"),
+    DOTS("dots", "Dots & Boxes"),
+    MEMORY("memory", "Memory Pairs");
 
     /** Played in turns with moves, sharing the server's turn rules. */
-    val turnBased get() = this == CONNECT4
+    val turnBased get() = this == CONNECT4 || this == DOTS || this == MEMORY
 
     companion object {
         fun from(key: String?) = entries.firstOrNull { it.key == key } ?: SUDOKU
@@ -56,16 +58,27 @@ data class ShipsView(
     val lastShotByMe: Boolean?,
 )
 
-/** A turn game (Connect Four) as one player sees it. */
+/**
+ * A turn game as one player sees it. Owner strings use 'm' for you, 'o' for the opponent
+ * and '.' for nobody.
+ */
 data class TurnsView(
     /** "me", "opponent" or null when nobody is to move. */
     val turn: String?,
-    /** Connect Four: 42 cells from the top row, 'm' your discs, 'o' the opponent's, '.' empty. */
+    /** Connect Four: 42 cells from the top row. */
     val board: String?,
-    /** The winning cells once someone has four in a row. */
+    /** Connect Four: the winning cells once someone has four in a row. */
     val winLine: List<Int>,
     val lastMoveByMe: Boolean?,
+    /** Connect Four: the cell of the last disc. */
     val lastCell: Int?,
+    /** Dots & Boxes: who drew each of the 40 lines, and who owns each of the 16 boxes. */
+    val lines: String? = null,
+    val boxes: String? = null,
+    val lastLine: Int? = null,
+    /** Memory Pairs: each card's picture when face up or matched, and who found it. */
+    val faces: List<Avatar?> = emptyList(),
+    val owners: String? = null,
 )
 
 /** A player's latest reaction; [seq] goes up with every new one. */
@@ -158,13 +171,21 @@ private fun parseShips(json: JSONObject) = ShipsView(
     lastShotByMe = json.optJSONObject("lastShot")?.optString("by")?.let { it == "me" },
 )
 
-private fun parseTurns(json: JSONObject) = TurnsView(
-    turn = json.stringOrNull("turn"),
-    board = json.stringOrNull("board"),
-    winLine = json.optJSONArray("winLine")?.let { a -> (0 until a.length()).map { a.optInt(it) } }.orEmpty(),
-    lastMoveByMe = json.optJSONObject("lastMove")?.optString("by")?.let { it == "me" },
-    lastCell = json.optJSONObject("lastMove")?.optInt("cell"),
-)
+private fun parseTurns(json: JSONObject): TurnsView {
+    val last = json.optJSONObject("lastMove")
+    return TurnsView(
+        turn = json.stringOrNull("turn"),
+        board = json.stringOrNull("board"),
+        winLine = json.optJSONArray("winLine")?.let { a -> (0 until a.length()).map { a.optInt(it) } }.orEmpty(),
+        lastMoveByMe = last?.optString("by")?.let { it == "me" },
+        lastCell = last?.takeIf { it.has("cell") }?.optInt("cell"),
+        lines = json.stringOrNull("lines"),
+        boxes = json.stringOrNull("boxes"),
+        lastLine = last?.takeIf { it.has("line") }?.optInt("line"),
+        faces = json.optJSONArray("faces")?.let { a -> (0 until a.length()).map { if (a.isNull(it)) null else Avatar.from(a.optString(it)) } }.orEmpty(),
+        owners = json.stringOrNull("owners"),
+    )
+}
 
 private fun JSONArray?.objects(): List<JSONObject> =
     if (this == null) emptyList() else (0 until length()).mapNotNull { optJSONObject(it) }

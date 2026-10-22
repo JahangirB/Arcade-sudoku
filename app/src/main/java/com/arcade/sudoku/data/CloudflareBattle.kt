@@ -55,6 +55,7 @@ class CloudflareBattle(serverUrl: String, private val password: String) : Battle
     @Volatile private var socket: WebSocket? = null
     @Volatile private var session: Session? = null
     @Volatile private var closed = false
+    @Volatile private var paused = false
     private var retries = 0
 
     private data class Session(val code: String, val me: Hello, val playerId: String)
@@ -136,6 +137,21 @@ class CloudflareBattle(serverUrl: String, private val password: String) : Battle
         } finally {
             close()
         }
+    }
+
+    override fun pause() {
+        paused = true
+        val old = socket
+        socket = null
+        old?.close(1000, "Paused")
+        failPending(IOException("Paused."))
+    }
+
+    override fun resume() {
+        if (!paused || closed) return
+        paused = false
+        retries = 0
+        session?.let { connect(it.code, it.me, "join", null, it.playerId) }
     }
 
     override fun close() {

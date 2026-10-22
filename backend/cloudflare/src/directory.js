@@ -34,7 +34,7 @@ export async function pair(store, a, b) {
 
 /**
  * Builds the push message for an invitation or a reply and returns { token, data }.
- * kind: 'invite' (needs code and game) or 'invite_reply' (needs accepted).
+ * kind: 'invite' or 'your_turn' (need code and game), or 'invite_reply' (needs accepted).
  */
 export async function prepareMessage(store, kind, { from, to, code, game, accepted }) {
   const fromId = cleanDeviceId(from);
@@ -49,7 +49,7 @@ export async function prepareMessage(store, kind, { from, to, code, game, accept
   }
   const sender = (await store.get('device:' + fromId)) || {};
   const data = { type: kind, fromDevice: fromId, fromName: sender.name || 'Your partner', fromAvatar: sender.avatar || '' };
-  if (kind === 'invite') {
+  if (kind === 'invite' || kind === 'your_turn') {
     data.code = normalizeCode(code);
     data.game = GAMES.includes(game) ? game : 'sudoku';
   } else {

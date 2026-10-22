@@ -35,6 +35,16 @@ quick **reactions** (👍 👏 🔥 😂 😮 😅 🤔 😎 ❤️ ⏰). The fi
   or diagonally wins, and a full board is a draw. Play against the computer (Easy, Medium,
   Hard), online with your partner (Cloudflare server) or nearby. Both tap **Ready**; who
   starts swaps every round. If one phone has an older app, it is asked to update first.
+- **Dots & Boxes:** take turns drawing a line between two dots on a 5 × 5 grid; closing a box
+  claims it and you draw again. Most boxes wins. Play against the computer, online or nearby.
+- **Memory Pairs:** 16 face-down cards with 8 pairs of avatar pictures. Flip two; a pair is
+  yours and you go again. Most pairs wins. Play alone (fewest flips) or with your partner; the
+  server keeps the cards hidden, so neither phone can peek.
+
+**Play across time zones.** Connect Four, Dots & Boxes and Memory Pairs don't need you both
+online at once: close the app after your move and your partner gets a **"Your turn"**
+notification (Cloudflare server with invitations set up). Tap it to make your move. Turn games
+are never lost for being away, and the room waits up to a week.
 
 ## Playing with your partner
 
@@ -304,10 +314,10 @@ Requires Android 8.0 (API 26) or newer.
 | --- | --- |
 | `backend/Code.gs` | Apps Script web app: rooms, puzzle generator, start sync, progress, winner |
 | `backend/test/` | Node tests that run `Code.gs` against mocked Apps Script services |
-| `backend/cloudflare/` | Cloudflare Worker: one Durable Object per room (`src/room.js`: Sudoku, Ship Battle and turn-game rules; `src/connect4.js`) and a Directory object for invitations (`src/directory.js`, `src/push.js`), with unit and end-to-end tests |
+| `backend/cloudflare/` | Cloudflare Worker: one Durable Object per room (`src/room.js`: Sudoku, Ship Battle and turn-game rules; `src/connect4.js`, `src/dots.js`, `src/memory.js`) and a Directory object for invitations (`src/directory.js`, `src/push.js`), with unit and end-to-end tests |
 | `app/src/main/java/com/arcade/sudoku/data/` | Server clients (`BattleApi` for Apps Script, `CloudflareBattle`), response models, invites, profile, updater |
 | `app/src/main/java/com/arcade/sudoku/game/ships/` | Ship Battle rules, random fleets and the computer opponent |
-| `app/src/main/java/com/arcade/sudoku/game/connect4/` | Connect Four rules and the computer opponent |
+| `app/src/main/java/com/arcade/sudoku/game/connect4/`, `dots/`, `memory/`, `turns/` | Turn games: Connect Four, Dots & Boxes and Memory Pairs rules, the computer opponents, and the shared move interface |
 | `app/src/main/java/com/arcade/sudoku/ui/art/` | The app's own drawings: avatars, animated reactions and the ship styles |
 | `app/src/main/java/com/arcade/sudoku/push/` | Invitations: Firebase setup, notifications with Play/Decline, the invite endpoints |
 | `app/src/main/java/com/arcade/sudoku/data/nearby/` | Nearby battles: `LocalRoom` (the rules, run on the host phone), `NearbyHost`, `NearbyGuest` |

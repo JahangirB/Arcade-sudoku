@@ -71,6 +71,8 @@ fun HomeScreen(
     onProfile: () -> Unit,
     onShips: () -> Unit,
     onConnectFour: () -> Unit,
+    onDots: () -> Unit,
+    onMemory: () -> Unit,
     partnerBusy: Boolean,
     onPlayWithPartner: (GameKind) -> Unit,
     onInvitePartner: (GameKind) -> Unit,
@@ -136,6 +138,16 @@ fun HomeScreen(
                 AppCard("Connect Four") {
                     Text("Drop discs in turn. Four in a row wins.", color = p.muted, fontSize = 14.sp)
                     PrimaryButton("Play vs computer", onConnectFour)
+                }
+
+                AppCard("Dots & Boxes") {
+                    Text("Draw lines in turn. Close a box to claim it and go again.", color = p.muted, fontSize = 14.sp)
+                    PrimaryButton("Play vs computer", onDots)
+                }
+
+                AppCard("Memory Pairs") {
+                    Text("Flip two cards at a time and find all the pairs.", color = p.muted, fontSize = 14.sp)
+                    PrimaryButton("Play", onMemory)
                 }
 
                 SecondaryButton("Battle a friend", onBattle)

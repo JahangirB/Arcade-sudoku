@@ -88,7 +88,7 @@ class NearbyHost(context: Context, private val hostName: String, private val hos
         local { fire(LocalRoom.HOST, x, y, now()) }
 
     override suspend fun move(code: String, playerId: String, move: JSONObject) =
-        local { move(LocalRoom.HOST, move.optInt("col", -1), now()) }
+        local { move(LocalRoom.HOST, move, now()) }
 
     override suspend fun leave(code: String, playerId: String) {
         withContext(Dispatchers.Main.immediate) {
@@ -189,7 +189,7 @@ class NearbyHost(context: Context, private val hostName: String, private val hos
                     r.setReady(LocalRoom.GUEST, msg.optBoolean("ready", true), Difficulty.from(msg.optString("difficulty")), now)
                 }
                 "fire" -> r.fire(LocalRoom.GUEST, msg.optInt("x", -1), msg.optInt("y", -1), now)
-                "move" -> r.move(LocalRoom.GUEST, msg.optJSONObject("move")?.optInt("col", -1) ?: -1, now)
+                "move" -> r.move(LocalRoom.GUEST, msg.optJSONObject("move") ?: JSONObject(), now)
                 "board" -> r.submitBoard(LocalRoom.GUEST, msg.optString("board"), now)
                 "emoji" -> r.sendEmoji(
                     LocalRoom.GUEST,
