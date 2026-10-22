@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="arcade_background">#FF0B0F1F</color>
+    <color name="ic_launcher_background">#FF0B0F1F</color>
+
+    <style name="Theme.ArcadeSudoku" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/arcade_background</item>
+        <item name="android:statusBarColor">@color/arcade_background</item>
+        <item name="android:navigationBarColor">@color/arcade_background</item>
+    </style>
+</resources>
