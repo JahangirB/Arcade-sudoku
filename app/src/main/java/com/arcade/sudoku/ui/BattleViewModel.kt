@@ -19,6 +19,8 @@ import com.arcade.sudoku.data.nearby.NearbyGuest
 import com.arcade.sudoku.data.nearby.NearbyHost
 import com.arcade.sudoku.data.parseRoom
 import com.arcade.sudoku.game.BoardState
+import com.arcade.sudoku.push.Push
+import com.arcade.sudoku.push.PushApi
 import com.arcade.sudoku.game.Sudoku
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -111,6 +113,15 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
     private var scanJob: Job? = null
     /** The server of the current online session, remembered with the partner. */
     private var sessionServer: Pair<String, String>? = null
+
+    init {
+        // A declined invitation shows on screen too when the app is open.
+        viewModelScope.launch {
+            Push.events.collect { event ->
+                if (event.type == "invite_reply" && !event.accepted) showMessage("${event.fromName} can't play right now.")
+            }
+        }
+    }
 
     // --- Start screen -------------------------------------------------------------------------
 
@@ -209,6 +220,39 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun forgetPartner() = store.setPartner(null)
+
+    /** Opens the partner's room and sends them a notification inviting them to it. */
+    fun invitePartner(game: GameKind) {
+        val partner = store.profile.value.partner ?: return
+        val to = partner.deviceId
+            ?: return showMessage("Play one online battle together with the new app first, then you can invite.")
+        if (!PushApi.supports(partner.serverUrl)) return showMessage("Invitations need the Cloudflare server.")
+        store.setScriptUrl(partner.serverUrl)
+        store.setServerPassword(partner.password)
+        _state.update { it.copy(hostGame = game) }
+        startOnline(partner.serverUrl, partner.password) { b, me ->
+            val json = openPartnerRoom(b, partner.code, me, partner.myPlayerId, game)
+            try {
+                PushApi(partner.serverUrl, partner.password).invite(me.deviceId, to, partner.code, game)
+                showMessage("Invitation sent to ${partner.name}.")
+            } catch (e: Exception) {
+                // The room is open either way; the partner can still tap Play.
+                showMessage(e.message ?: "Could not send the invitation.")
+            }
+            json
+        }
+    }
+
+    /** "Play" on an invitation: join the partner's room with the code from the notification. */
+    fun acceptInvite(code: String, game: GameKind) {
+        val partner = store.profile.value.partner
+        if (partner == null) {
+            _state.update { it.copy(joinCode = code) }
+            return join()
+        }
+        if (partner.code != code) store.setPartner(partner.copy(code = code, myPlayerId = null))
+        playWithPartner(game)
+    }
 
     private fun startOnline(url: String, password: String = store.profile.value.serverPassword, open: suspend (BattleBackend, Hello) -> JSONObject) {
         startSession(BattleBackend.forUrl(url, password), BattleMode.ONLINE, server = url to password, open = open)
@@ -537,7 +581,13 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
             deviceId = opponent.deviceId ?: old?.takeIf { it.name == opponent.name }?.deviceId,
             myPlayerId = playerId,
         )
-        if (partner != old) store.setPartner(partner)
+        if (partner != old) {
+            store.setPartner(partner)
+            // A new partner or server: make sure this phone can be invited there.
+            if (old == null || old.serverUrl != partner.serverUrl || old.deviceId != partner.deviceId) {
+                viewModelScope.launch { Push.registerEverywhere(getApplication()) }
+            }
+        }
     }
 
     private fun endSession(message: String?, closeBackend: Boolean = true) {

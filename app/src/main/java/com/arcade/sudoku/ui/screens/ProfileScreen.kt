@@ -26,7 +26,13 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Surface
 import com.arcade.sudoku.data.Avatar
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.TextButton
 import com.arcade.sudoku.data.Difficulty
+import com.arcade.sudoku.push.Push
+import com.arcade.sudoku.push.PushApi
+import com.arcade.sudoku.ui.theme.OpponentColor
 import com.arcade.sudoku.data.Profile
 import com.arcade.sudoku.data.ThemeMode
 import com.arcade.sudoku.ui.AppViewModel
@@ -129,6 +135,30 @@ fun ProfileScreen(
                         enabled = !busy,
                     )
                     SecondaryButton("Test link", battle::testConnection, Modifier.weight(1f), enabled = !busy)
+                }
+            }
+
+            profile.partner?.let { partner ->
+                AppCard("Saved partner") {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        PlayerAvatar(partner.name, OpponentColor, avatar = partner.avatar)
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(partner.name, color = p.text, fontWeight = FontWeight.SemiBold)
+                            Text("Code ${partner.code}", color = p.muted, fontSize = 13.sp)
+                        }
+                        TextButton(onClick = battle::forgetPartner) { Text("Forget", color = p.bad) }
+                    }
+                    Text(
+                        when {
+                            !Push.available -> "Invitations are off in this build (see the README to switch them on)."
+                            !PushApi.supports(partner.serverUrl) -> "Invitations need the Cloudflare server."
+                            partner.deviceId == null -> "Play one online battle together to switch on invitations."
+                            else -> "You can invite ${partner.name} from the home screen."
+                        },
+                        color = p.muted,
+                        fontSize = 13.sp,
+                    )
                 }
             }
 

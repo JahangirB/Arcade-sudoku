@@ -8,6 +8,27 @@ plugins {
 // than the one before. Local builds are version 1 and never count as newer than a release.
 val buildNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
 
+// Push invitations use Firebase, which is optional: put google-services.json from the Firebase
+// console into app/ to switch them on. It is read by hand (no Google Services plugin), so the
+// app still builds without it and invitations then stay off.
+val firebase: Map<String, String> = file("google-services.json").takeIf { it.exists() }?.let { f ->
+    @Suppress("UNCHECKED_CAST")
+    val json = groovy.json.JsonSlurper().parse(f) as Map<String, Any?>
+    val project = json["project_info"] as Map<String, Any?>
+    @Suppress("UNCHECKED_CAST")
+    val client = (json["client"] as List<Map<String, Any?>>).first { c ->
+        val info = c["client_info"] as Map<String, Any?>
+        (info["android_client_info"] as Map<String, Any?>)["package_name"] == "com.arcade.sudoku"
+    }
+    @Suppress("UNCHECKED_CAST")
+    mapOf(
+        "PROJECT_ID" to project["project_id"].toString(),
+        "SENDER_ID" to project["project_number"].toString(),
+        "APP_ID" to (client["client_info"] as Map<String, Any?>)["mobilesdk_app_id"].toString(),
+        "API_KEY" to (client["api_key"] as List<Map<String, Any?>>).first()["current_key"].toString(),
+    )
+} ?: emptyMap()
+
 android {
     namespace = "com.arcade.sudoku"
     compileSdk = 35
@@ -18,6 +39,10 @@ android {
         targetSdk = 35
         versionCode = buildNumber
         versionName = "1.0.$buildNumber"
+
+        for (key in listOf("PROJECT_ID", "SENDER_ID", "APP_ID", "API_KEY")) {
+            buildConfigField("String", "FIREBASE_$key", "\"${firebase[key].orEmpty()}\"")
+        }
 
         // Where the in-app updater looks for new releases (the README download button's release).
         buildConfigField(
@@ -72,6 +97,8 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.okhttp)
     implementation(libs.play.services.nearby)
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.messaging)
     debugImplementation(libs.androidx.compose.ui.tooling)
 
     testImplementation(libs.junit)

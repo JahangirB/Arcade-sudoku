@@ -7,12 +7,20 @@ import com.arcade.sudoku.data.Profile
 import com.arcade.sudoku.data.ProfileStore
 import com.arcade.sudoku.data.ThemeMode
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+import androidx.lifecycle.viewModelScope
+import com.arcade.sudoku.push.Push
 
 /** The profile screen's settings: who you are, which server you use and how the app looks. */
 class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val store = ProfileStore.get(app)
 
     val profile: StateFlow<Profile> = store.profile
+
+    init {
+        // Keep the battle servers up to date with this phone's push address.
+        viewModelScope.launch { Push.registerEverywhere(app) }
+    }
 
     fun setName(value: String) = store.setName(value)
     fun setScriptUrl(value: String) = store.setScriptUrl(value)

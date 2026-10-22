@@ -41,6 +41,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.FilterChip
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
+import com.arcade.sudoku.push.Push
+import com.arcade.sudoku.push.PushApi
 import com.arcade.sudoku.data.Difficulty
 import com.arcade.sudoku.data.GameKind
 import com.arcade.sudoku.data.SavedPartner
@@ -59,9 +69,11 @@ fun HomeScreen(
     onProfile: () -> Unit,
     partnerBusy: Boolean,
     onPlayWithPartner: (GameKind) -> Unit,
+    onInvitePartner: (GameKind) -> Unit,
 ) {
     val p = AppTheme.palette
     var pickingLevel by rememberSaveable { mutableStateOf(false) }
+    AskForNotifications(enabled = profile.partner != null)
 
     Box(Modifier.fillMaxSize()) {
         Column(
@@ -99,7 +111,7 @@ fun HomeScreen(
 
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 profile.partner?.let { partner ->
-                    PartnerCard(partner, partnerBusy, onPlayWithPartner)
+                    PartnerCard(partner, partnerBusy, onPlayWithPartner, onInvitePartner)
                 }
 
                 AppCard("Sudoku") {
@@ -175,7 +187,7 @@ private fun LevelDialog(title: String, onDismiss: () -> Unit, onPick: (Difficult
 
 /** The last online partner: one tap reopens the same room on the same server. */
 @Composable
-private fun PartnerCard(partner: SavedPartner, busy: Boolean, onPlay: (GameKind) -> Unit) {
+private fun PartnerCard(partner: SavedPartner, busy: Boolean, onPlay: (GameKind) -> Unit, onInvite: (GameKind) -> Unit) {
     val p = AppTheme.palette
     var game by rememberSaveable { mutableStateOf(GameKind.SUDOKU) }
     AppCard {
@@ -192,7 +204,38 @@ private fun PartnerCard(partner: SavedPartner, busy: Boolean, onPlay: (GameKind)
                 FilterChip(selected = game == kind, onClick = { game = kind }, label = { Text(kind.label) })
             }
         }
-        PrimaryButton("Play ${game.label}", { onPlay(game) }, loading = busy)
+        val canInvite = Push.available && partner.deviceId != null && PushApi.supports(partner.serverUrl)
+        if (canInvite) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                PrimaryButton("Invite", { onInvite(game) }, Modifier.weight(1f), loading = busy)
+                SecondaryButton("Join", { onPlay(game) }, Modifier.weight(1f), enabled = !busy)
+            }
+            Text(
+                "Invite opens the game and sends ${partner.name} a notification. " +
+                    "Join if ${partner.name} has already opened it.",
+                color = p.muted,
+                fontSize = 12.sp,
+            )
+        } else {
+            PrimaryButton("Play ${game.label}", { onPlay(game) }, loading = busy)
+        }
+    }
+}
+
+/** Invitations only show with the notification permission (Android 13+); ask once per launch. */
+@Composable
+private fun AskForNotifications(enabled: Boolean) {
+    if (!enabled || !Push.available || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+    val context = LocalContext.current
+    var asked by rememberSaveable { mutableStateOf(false) }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    LaunchedEffect(Unit) {
+        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        if (!granted && !asked) {
+            asked = true
+            launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
     }
 }
 

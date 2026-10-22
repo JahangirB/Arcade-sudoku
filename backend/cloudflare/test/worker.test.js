@@ -7,6 +7,8 @@ import { spawn } from 'node:child_process';
 const PORT = 8799;
 const BASE = `http://127.0.0.1:${PORT}`;
 const enabled = process.env.RUN_WORKER_TESTS === '1';
+const HOST_DEVICE = 'aaaaaaaa-0000-4000-8000-000000000001';
+const GUEST_DEVICE = 'bbbbbbbb-0000-4000-8000-000000000002';
 
 async function startServer() {
   const child = spawn('npx', ['wrangler', 'dev', '--port', String(PORT), '--var', 'SERVER_PASSWORD:pw1', '--persist-to', '.wrangler/test-state'], {
@@ -79,17 +81,19 @@ test('a full battle over WebSockets', { skip: !enabled, timeout: 90_000 }, async
   assert.equal((await fetch(`${BASE}/ping?password=wrong`)).status, 401);
 
   const code = `T${Date.now().toString(36).toUpperCase()}`.slice(0, 12);
-  const host = connect({ code, action: 'create', name: 'Alice', avatar: 'fox' });
+  const host = connect({ code, action: 'create', name: 'Alice', avatar: 'fox', deviceId: HOST_DEVICE });
   const hostOpen = await host.next((m) => m.re === 'open');
   assert.equal(hostOpen.type, 'state');
   assert.equal(hostOpen.status, 'waiting');
   assert.ok(hostOpen.playerId);
 
-  const guest = connect({ code, action: 'join', name: 'Bob' });
+  const guest = connect({ code, action: 'join', name: 'Bob', deviceId: GUEST_DEVICE });
   const guestOpen = await guest.next((m) => m.re === 'open');
   assert.equal(guestOpen.status, 'lobby');
   assert.equal(guestOpen.opponent.name, 'Alice');
   assert.equal(guestOpen.opponent.avatar, 'fox');
+  assert.equal(guestOpen.opponent.deviceId, HOST_DEVICE);
+  assert.equal(guestOpen.game, 'sudoku');
   // The host is told about the guest without asking.
   const pushed = await host.next((m) => m.type === 'state' && !m.re && m.opponent);
   assert.equal(pushed.opponent.name, 'Bob');
@@ -141,4 +145,17 @@ test('a full battle over WebSockets', { skip: !enabled, timeout: 90_000 }, async
   assert.match(closed.error, /closed/);
 
   for (const c of [host, guest, again, eve]) c.ws.close();
+
+  // Invitations: phones register their push token; without the Firebase secret the
+  // server says so clearly. Strangers can't invite each other.
+  const post = (path, body) => fetch(`${BASE}${path}?password=pw1`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+  }).then((r) => r.json());
+  const registered = await post('/register', { deviceId: HOST_DEVICE, token: 'x'.repeat(40), name: 'Alice' });
+  assert.equal(registered.ok, true);
+  assert.equal(registered.invitations, false);
+  const invite = await post('/invite', { from: HOST_DEVICE, to: GUEST_DEVICE, code, game: 'sudoku' });
+  assert.equal(invite.ok, false);
+  assert.equal(invite.reason, 'push_not_configured');
+  assert.equal((await post('/register', { deviceId: 'nope', token: 'short' })).ok, false);
 });

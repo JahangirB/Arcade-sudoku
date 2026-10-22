@@ -1,7 +1,10 @@
 // Arcade Sudoku Battle server for Cloudflare Workers.
 //
-// GET /ping                 health check (also verifies the password)
-// GET /room/<CODE> (WebSocket) with ?action=create|join&name=&playerId=&password=
+// GET  /ping                 health check (also verifies the password)
+// GET  /room/<CODE> (WebSocket) with ?action=create|join&name=&avatar=&deviceId=&game=&playerId=&password=
+// POST /register             { deviceId, token, name, avatar }  a phone's push token
+// POST /invite               { from, to, code, game }           push an invitation to a partner
+// POST /invite/reply         { from, to, accepted, code }       push the answer back
 //
 // Each room is one Durable Object, so a room's state lives in one place and every
 // change is pushed to both players at once. Messages are JSON:
@@ -10,6 +13,8 @@
 //                  { type: 'error', re?, error, fatal }
 
 import { DurableObject } from 'cloudflare:workers';
+import { DirectoryError, pair, prepareMessage, register } from './directory.js';
+import { createPushSender } from './push.js';
 import {
   GameError, checkTimers, createRoom, joinRoom, leave, nextDeadline, normalizeCode,
   sendEmoji, setConnected, setReady, submitBoard, view,
@@ -28,6 +33,20 @@ export default {
     const path = url.pathname.replace(/\/+$/, '');
     if (path === '' || path === '/ping') {
       return json({ ok: true, serverTime: Date.now(), version: API_VERSION, kind: 'cloudflare' });
+    }
+
+    if (request.method === 'POST' && ['/register', '/invite', '/invite/reply'].includes(path)) {
+      let body;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ ok: false, error: 'Expected JSON.' }, 400);
+      }
+      const directory = env.DIRECTORY.get(env.DIRECTORY.idFromName('directory'));
+      const result = path === '/register'
+        ? await directory.register(body)
+        : await directory.notify(path === '/invite' ? 'invite' : 'invite_reply', body);
+      return json(result, result.ok ? 200 : 400);
     }
 
     const match = path.match(/^\/room\/([^/]+)$/);
@@ -103,6 +122,7 @@ export class Room extends DurableObject {
       server.serializeAttachment({ role });
       setConnected(this.room, role, true, now);
       await this.save();
+      await this.rememberPartners();
       this.send(server, role, { re: 'open', playerId: this.room.players[role].id });
       this.broadcast(server);
     } catch (err) {
@@ -110,6 +130,18 @@ export class Room extends DurableObject {
       safeClose(server, 4001, 'Could not open the battle');
     }
     return new Response(null, { status: 101, webSocket: client });
+  }
+
+  /** Tells the directory that these two phones played together, so they may invite each other. */
+  async rememberPartners() {
+    const host = this.room.players.host?.deviceId;
+    const guest = this.room.players.guest?.deviceId;
+    if (!host || !guest || !this.env.DIRECTORY) return;
+    try {
+      await this.env.DIRECTORY.get(this.env.DIRECTORY.idFromName('directory')).pair(host, guest);
+    } catch {
+      // Invitations are a convenience; never let them break a battle.
+    }
   }
 
   async webSocketMessage(ws, raw) {
@@ -218,6 +250,51 @@ export class Room extends DurableObject {
       } else {
         this.send(ws, role);
       }
+    }
+  }
+}
+
+/** One object for the whole server: push tokens and who may invite whom. */
+export class Directory extends DurableObject {
+  constructor(ctx, env) {
+    super(ctx, env);
+    this.sender = null;
+  }
+
+  get store() {
+    return this.ctx.storage;
+  }
+
+  async register(body) {
+    try {
+      await register(this.store, body || {}, Date.now());
+      return { ok: true, invitations: !!this.env.FIREBASE_SERVICE_ACCOUNT };
+    } catch (err) {
+      return { ok: false, error: err.message, reason: err.reason || null };
+    }
+  }
+
+  async pair(a, b) {
+    await pair(this.store, a, b);
+  }
+
+  /** Sends an invitation or a reply to the partner's phone. */
+  async notify(kind, body) {
+    try {
+      if (!this.env.FIREBASE_SERVICE_ACCOUNT) {
+        throw new DirectoryError('Invitations are not set up on this server yet (FIREBASE_SERVICE_ACCOUNT is missing).', 'push_not_configured');
+      }
+      const message = await prepareMessage(this.store, kind, body || {});
+      this.sender ??= createPushSender(JSON.parse(this.env.FIREBASE_SERVICE_ACCOUNT));
+      const sent = await this.sender.send(message.token, message.data);
+      if (sent.unregistered) {
+        await this.store.delete(message.targetKey);
+        throw new DirectoryError('Your partner needs to open the app once to receive invitations again.', 'not_registered');
+      }
+      if (!sent.ok) throw new DirectoryError('Could not send the notification: ' + sent.error, 'push_failed');
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err.message, reason: err.reason || 'push_failed' };
     }
   }
 }

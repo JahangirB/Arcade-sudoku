@@ -9,6 +9,7 @@ coroutines = "1.9.0"
 junit = "4.13.2"
 okhttp = "4.12.0"
 playServicesNearby = "19.3.0"
+firebaseBom = "33.7.0"
 orgJson = "20240303"
 
 [libraries]
@@ -25,6 +26,8 @@ androidx-compose-material-icons-core = { group = "androidx.compose.material", na
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
+firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebaseBom" }
+firebase-messaging = { group = "com.google.firebase", name = "firebase-messaging" }
 play-services-nearby = { group = "com.google.android.gms", name = "play-services-nearby", version.ref = "playServicesNearby" }
 # The real org.json for unit tests (android.jar only has stubs).
 org-json = { group = "org.json", name = "json", version.ref = "orgJson" }
