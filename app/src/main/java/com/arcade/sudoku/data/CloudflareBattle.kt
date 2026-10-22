@@ -96,6 +96,7 @@ class CloudflareBattle(serverUrl: String, private val password: String) : Battle
             .addQueryParameter("name", me.name)
             .addQueryParameter("deviceId", me.deviceId)
             .addQueryParameter("password", password)
+            .addQueryParameter("games", BattleBackend.SUPPORTED_GAMES)
             .apply {
                 me.avatar?.let { addQueryParameter("avatar", it.key) }
                 game?.let { addQueryParameter("game", it.key) }
@@ -123,6 +124,9 @@ class CloudflareBattle(serverUrl: String, private val password: String) : Battle
 
     override suspend fun fire(code: String, playerId: String, x: Int, y: Int) =
         request(JSONObject().put("type", "fire").put("x", x).put("y", y))
+
+    override suspend fun move(code: String, playerId: String, move: JSONObject) =
+        request(JSONObject().put("type", "move").put("move", move))
 
     override suspend fun leave(code: String, playerId: String) {
         try {

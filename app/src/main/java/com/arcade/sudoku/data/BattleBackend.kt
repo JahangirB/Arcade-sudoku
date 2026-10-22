@@ -32,12 +32,18 @@ interface BattleBackend {
 
     /** Ship Battle: fire at the opponent's sea. */
     suspend fun fire(code: String, playerId: String, x: Int, y: Int): JSONObject
+
+    /** Turn games: play [move] ({"col": n} in Connect Four). Readiness goes through [ready]. */
+    suspend fun move(code: String, playerId: String, move: JSONObject): JSONObject
     suspend fun leave(code: String, playerId: String)
 
     /** Drops any live connection. */
     fun close() {}
 
     companion object {
+        /** The games this app can play, sent when joining so a server can ask older apps to update. */
+        val SUPPORTED_GAMES: String = GameKind.entries.joinToString(",") { it.key }
+
         /** Apps Script links poll; anything else is a Cloudflare server with a live connection. */
         fun forUrl(url: String, password: String): BattleBackend =
             if (isAppsScript(url)) BattleApi(url) else CloudflareBattle(url, password)

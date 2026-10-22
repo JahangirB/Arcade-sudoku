@@ -7,6 +7,7 @@ import com.arcade.sudoku.data.ApiException
 import com.arcade.sudoku.data.BattleBackend
 import com.arcade.sudoku.data.Difficulty
 import com.arcade.sudoku.data.GameKind
+import com.arcade.sudoku.game.connect4.ConnectFour
 import com.arcade.sudoku.data.Hello
 import com.arcade.sudoku.data.SavedPartner
 import com.arcade.sudoku.data.Invite
@@ -173,7 +174,14 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
         if (game != GameKind.SUDOKU && BattleBackend.isAppsScript(url)) {
             return showMessage("${game.label} needs a Cloudflare server or a nearby battle.")
         }
-        startOnline(url) { b, me -> b.create(code, me, game) }
+        startOnline(url) { b, me -> b.create(code, me, game).also { checkGame(it, game) } }
+    }
+
+    /** A server from before [game] existed opens a Sudoku room instead; say so rather than play the wrong game. */
+    private fun checkGame(room: JSONObject, game: GameKind) {
+        if (GameKind.from(room.optString("game")) != game) {
+            throw ApiException("The battle server needs an update to play ${game.label}. See \"Updating the server\" in the README.", fatal = true)
+        }
     }
 
     fun join() {
@@ -218,7 +226,7 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
             try {
-                return b.create(code, me, game)
+                return b.create(code, me, game).also { checkGame(it, game) }
             } catch (e: ApiException) {
                 // The partner opened it a moment ago: join it on the next round.
                 if (e.reason != "code_taken") throw e
@@ -393,6 +401,40 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
         val id = playerId ?: return@runBusy
         val sentAt = System.currentTimeMillis()
         applyResponse(requireBackend().readyShips(room.code, id, !room.me.ready, _state.value.fleetDraft), sentAt)
+    }
+
+    /** Turn games: ready for the next round, or not ready any more. */
+    fun readyTurns() = runBusy {
+        val room = _state.value.room ?: return@runBusy
+        val id = playerId ?: return@runBusy
+        val sentAt = System.currentTimeMillis()
+        applyResponse(requireBackend().ready(room.code, id, !room.me.ready, null), sentAt)
+    }
+
+    /** Connect Four: drop a disc into [col]. */
+    fun dropDisc(col: Int) {
+        val s = _state.value
+        val room = s.room ?: return
+        val id = playerId ?: return
+        val b = backend ?: return
+        val turns = room.turns ?: return
+        val board = turns.board ?: return
+        if (s.firing || turns.turn != "me" || ConnectFour.landing(board, col) == null) return
+        _state.update { it.copy(firing = true) }
+        viewModelScope.launch {
+            try {
+                val sentAt = System.currentTimeMillis()
+                applyResponse(b.move(room.code, id, JSONObject().put("col", col)), sentAt)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: ApiException) {
+                if (e.fatal) endSession(e.message) else showMessage(e.message)
+            } catch (e: IOException) {
+                showMessage("Network problem, try again.")
+            } finally {
+                _state.update { it.copy(firing = false) }
+            }
+        }
     }
 
     /** Ship Battle: fire at the opponent's sea. */

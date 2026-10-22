@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -69,6 +70,7 @@ fun HomeScreen(
     onBattle: () -> Unit,
     onProfile: () -> Unit,
     onShips: () -> Unit,
+    onConnectFour: () -> Unit,
     partnerBusy: Boolean,
     onPlayWithPartner: (GameKind) -> Unit,
     onInvitePartner: (GameKind) -> Unit,
@@ -129,6 +131,11 @@ fun HomeScreen(
                 AppCard("Ship Battle") {
                     Text("Hide your fleet, sink theirs. A hit fires again.", color = p.muted, fontSize = 14.sp)
                     PrimaryButton("Play vs computer", onShips)
+                }
+
+                AppCard("Connect Four") {
+                    Text("Drop discs in turn. Four in a row wins.", color = p.muted, fontSize = 14.sp)
+                    PrimaryButton("Play vs computer", onConnectFour)
                 }
 
                 SecondaryButton("Battle a friend", onBattle)
@@ -206,7 +213,7 @@ private fun PartnerCard(partner: SavedPartner, busy: Boolean, onPlay: (GameKind)
                 Text("Code ${partner.code} · saved", color = p.muted, fontSize = 13.sp)
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
             GameKind.entries.forEach { kind ->
                 FilterChip(selected = game == kind, onClick = { game = kind }, label = { Text(kind.label) })
             }

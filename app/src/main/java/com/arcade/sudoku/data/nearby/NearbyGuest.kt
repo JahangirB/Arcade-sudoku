@@ -128,6 +128,9 @@ class NearbyGuest(context: Context) : BattleBackend {
     override suspend fun fire(code: String, playerId: String, x: Int, y: Int) =
         request(JSONObject().put("type", "fire").put("x", x).put("y", y))
 
+    override suspend fun move(code: String, playerId: String, move: JSONObject) =
+        request(JSONObject().put("type", "move").put("move", move))
+
     override suspend fun leave(code: String, playerId: String) {
         try {
             withTimeoutOrNull(LEAVE_TIMEOUT_MS) { request(JSONObject().put("type", "leave")) }
@@ -152,6 +155,7 @@ class NearbyGuest(context: Context) : BattleBackend {
         .put("type", "open").put("name", name)
         .put("avatar", avatar?.key ?: JSONObject.NULL)
         .put("playerId", playerId ?: JSONObject.NULL)
+        .put("games", BattleBackend.SUPPORTED_GAMES)
 
     private suspend fun request(message: JSONObject, id: String = "m${nextId.incrementAndGet()}"): JSONObject {
         val target = endpointId ?: throw IOException("Not connected.")

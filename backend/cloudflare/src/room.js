@@ -4,6 +4,7 @@
 // missing polls.
 
 import { generatePuzzle } from './sudoku.js';
+import * as connect4 from './connect4.js';
 
 // Empty cells per level; must match Difficulty in the Android app.
 export const DIFFICULTY_HOLES = { beginner: 30, easy: 38, medium: 46, hard: 50, expert: 54, master: 56 };
@@ -21,7 +22,9 @@ export const LOBBY_ABANDON_MS = 5 * 60_000;
 export const ROOM_IDLE_MS = 6 * 60 * 60_000;
 const CLOSED_ROOM_MS = 60_000;
 
-export const GAMES = ['sudoku', 'ships'];
+export const GAMES = ['sudoku', 'ships', 'connect4'];
+// What apps from before the version check could play; they don't say which games they know.
+const OLD_APP_GAMES = ['sudoku', 'ships'];
 
 export class GameError extends Error {
   /**
@@ -83,9 +86,15 @@ export function findRole(room, playerId) {
   return null;
 }
 
-/** Joins as guest, or reconnects when `playerId` belongs to the room. Returns the role. */
-export function joinRoom(room, name, playerId, now, uuid, avatar = null, deviceId = null) {
+/**
+ * Joins as guest, or reconnects when `playerId` belongs to the room. Returns the role.
+ * `games` lists the games the joining app knows (null for apps that predate the list).
+ */
+export function joinRoom(room, name, playerId, now, uuid, avatar = null, deviceId = null, games = null) {
   if (room.status === 'closed') throw new GameError('The host closed this battle.', true, 'closed');
+  if (!(games || OLD_APP_GAMES).includes(room.game)) {
+    throw new GameError('This game needs the latest Game Suite. Update the app to join.', true, 'update_needed');
+  }
   const known = findRole(room, playerId);
   if (known) {
     const id = cleanDeviceId(deviceId);
@@ -258,6 +267,69 @@ function shipsView(room, role, status) {
     sunkEnemy: opponent?.fleet ? opponent.fleet.filter((s) => isSunk(s, me.shots || [])) : [],
     enemyFleet: status === 'finished' && opponent?.fleet ? opponent.fleet : null,
     lastShot: last ? { ...last, by: last.by === role ? 'me' : 'opponent' } : null,
+  };
+}
+
+// ---------------------------------------------------------------------------------------
+// Turn games (Connect Four): both players get ready, then take turns making moves. The
+// player who starts alternates from round to round.
+
+export const TURN_GAMES = ['connect4'];
+
+/** Ready (or not ready) for the next round of a turn game; it starts when both are ready. */
+export function setTurnReady(room, role, ready, now, random = Math.random) {
+  if (room.status !== 'lobby' && room.status !== 'finished') {
+    throw new GameError('You can only get ready in the lobby or after a match.');
+  }
+  if (!room.players.guest) throw new GameError('Waiting for an opponent to join.');
+  if (room.players[otherRole(role)].left) throw new GameError('Your opponent has left the battle.');
+  room.players[role].ready = ready !== false;
+  const { host, guest } = room.players;
+  if (host.ready && guest.ready) {
+    const first = room.firstTurn ? otherRole(room.firstTurn) : (random() < 0.5 ? 'host' : 'guest');
+    Object.assign(room, {
+      round: room.round + 1, status: 'started', startAt: now, winner: null, endReason: null,
+      firstTurn: first, turn: first, board: connect4.emptyBoard(), lastMove: null, winLine: null,
+    });
+    for (const p of [host, guest]) Object.assign(p, { ready: false, finishedAt: null });
+  }
+  bump(room);
+}
+
+/** Plays `move` ({ col } in Connect Four) for `role`. */
+export function makeMove(room, role, move, now) {
+  if (!TURN_GAMES.includes(room.game) || room.status !== 'started') throw new GameError('The game is not running.');
+  if (room.turn !== role) throw new GameError("It's not your turn.");
+  let result;
+  try {
+    result = connect4.drop(room.board, Number(move?.col), role[0]);
+  } catch (err) {
+    throw new GameError(err.message);
+  }
+  room.board = result.board;
+  room.lastMove = { by: role, cell: result.cell };
+  const line = connect4.winLine(room.board, result.cell);
+  if (line) {
+    room.winLine = line;
+    room.players[role].finishedAt = now;
+    endMatch(room, role, 'four');
+  } else if (connect4.isFull(room.board)) {
+    endMatch(room, null, 'draw');
+  } else {
+    room.turn = otherRole(role);
+  }
+  bump(room);
+}
+
+/** The board from one player's side: 'm' for their discs, 'o' for the opponent's. */
+function turnView(room, role, status) {
+  const mine = role[0];
+  const last = room.lastMove;
+  return {
+    turn: status === 'playing' ? (room.turn === role ? 'me' : 'opponent') : null,
+    board: room.board ? [...room.board].map((c) => (c === '.' ? '.' : c === mine ? 'm' : 'o')).join('') : null,
+    winLine: room.winLine || null,
+    lastMove: last ? { by: last.by === role ? 'me' : 'opponent', cell: last.cell } : null,
   };
 }
 
@@ -434,6 +506,7 @@ export function view(room, role, now) {
     me: playerView(me, room, status === 'finished' || room.game === 'ships', now),
     opponent: opponent ? playerView(opponent, room, true, now) : null,
     ships: room.game === 'ships' ? shipsView(room, role, status) : null,
+    turns: TURN_GAMES.includes(room.game) ? turnView(room, role, status) : null,
   };
 }
 

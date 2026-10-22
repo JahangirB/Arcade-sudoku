@@ -1,14 +1,14 @@
 // Arcade Sudoku Battle server for Cloudflare Workers.
 //
 // GET  /ping                 health check (also verifies the password)
-// GET  /room/<CODE> (WebSocket) with ?action=create|join&name=&avatar=&deviceId=&game=&playerId=&password=
+// GET  /room/<CODE> (WebSocket) with ?action=create|join&name=&avatar=&deviceId=&game=&games=&playerId=&password=
 // POST /register             { deviceId, token, name, avatar }  a phone's push token
 // POST /invite               { from, to, code, game }           push an invitation to a partner
 // POST /invite/reply         { from, to, accepted, code }       push the answer back
 //
 // Each room is one Durable Object, so a room's state lives in one place and every
 // change is pushed to both players at once. Messages are JSON:
-//   app -> server  { id, type: 'ready' | 'board' | 'fire' | 'emoji' | 'sync' | 'leave', ... }
+//   app -> server  { id, type: 'ready' | 'board' | 'fire' | 'move' | 'emoji' | 'sync' | 'leave', ... }
 //   server -> app  { type: 'state', re?, serverTime, ...room view }   (re = id it answers)
 //                  { type: 'error', re?, error, fatal }
 
@@ -18,6 +18,7 @@ import { createPushSender, serviceAccountText } from './push.js';
 import {
   GameError, checkTimers, createRoom, joinRoom, leave, nextDeadline, normalizeCode,
   fire, sendEmoji, setConnected, setReady, setShipsReady, submitBoard, view,
+  GAMES, TURN_GAMES, makeMove, setTurnReady,
 } from './room.js';
 
 const API_VERSION = 1;
@@ -36,6 +37,7 @@ export default {
         ok: true, serverTime: Date.now(), version: API_VERSION, kind: 'cloudflare',
         // Whether the Firebase key for invitations is set, to make setup easy to check.
         invitations: !!serviceAccountText(env),
+        games: GAMES,
       });
     }
 
@@ -112,7 +114,7 @@ export class Room extends DurableObject {
         if (!this.room) throw new GameError('No battle found for that secret code.', true, 'not_found');
         role = joinRoom(
           this.room, params.get('name'), params.get('playerId'), now, () => crypto.randomUUID(),
-          params.get('avatar'), params.get('deviceId'),
+          params.get('avatar'), params.get('deviceId'), params.get('games')?.split(',') ?? null,
         );
       }
 
@@ -165,7 +167,11 @@ export class Room extends DurableObject {
       switch (msg.type) {
         case 'ready':
           if (this.room.game === 'ships') setShipsReady(this.room, role, msg.ready !== false, msg.fleet, now);
+          else if (TURN_GAMES.includes(this.room.game)) setTurnReady(this.room, role, msg.ready !== false, now);
           else setReady(this.room, role, msg.ready !== false, msg.difficulty, now);
+          break;
+        case 'move':
+          makeMove(this.room, role, msg.move, now);
           break;
         case 'fire':
           fire(this.room, role, msg.x, msg.y, now);

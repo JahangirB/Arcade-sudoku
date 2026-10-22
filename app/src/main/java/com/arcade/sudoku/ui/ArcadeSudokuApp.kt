@@ -27,6 +27,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.arcade.sudoku.data.RoomStatus
 import com.arcade.sudoku.ui.screens.BattleMenuScreen
+import com.arcade.sudoku.ui.screens.ConnectFourGameScreen
+import com.arcade.sudoku.ui.screens.SoloConnectFourScreen
 import com.arcade.sudoku.ui.screens.GameScreen
 import com.arcade.sudoku.ui.screens.HomeScreen
 import com.arcade.sudoku.ui.screens.LobbyScreen
@@ -40,7 +42,7 @@ import com.arcade.sudoku.ui.art.ReactionBurst
 import com.arcade.sudoku.ui.screens.LocalShipStyle
 import com.arcade.sudoku.ui.theme.AppTheme
 
-private enum class Dest { HOME, PROFILE, BATTLE, SOLO, SHIPS }
+private enum class Dest { HOME, PROFILE, BATTLE, SOLO, SHIPS, CONNECT4 }
 
 @Composable
 fun ArcadeSudokuApp(
@@ -49,6 +51,7 @@ fun ArcadeSudokuApp(
     solo: SoloViewModel = viewModel(),
     updates: UpdateViewModel = viewModel(),
     ships: SoloShipsViewModel = viewModel(),
+    connectFour: SoloConnectFourViewModel = viewModel(),
 ) {
     val p = AppTheme.palette
     val profile by app.profile.collectAsStateWithLifecycle()
@@ -56,6 +59,7 @@ fun ArcadeSudokuApp(
     val soloState by solo.state.collectAsStateWithLifecycle()
     val updateState by updates.state.collectAsStateWithLifecycle()
     val shipsState by ships.state.collectAsStateWithLifecycle()
+    val connectFourState by connectFour.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     var dest by rememberSaveable { mutableStateOf(Dest.HOME) }
     var confirmLeave by rememberSaveable { mutableStateOf(false) }
@@ -102,8 +106,10 @@ fun ArcadeSudokuApp(
                     room != null && (room.status == RoomStatus.WAITING || room.status == RoomStatus.LOBBY) ->
                         LobbyScreen(battleState, profile, battle, onLeave = requestLeave)
                     room != null && room.game == GameKind.SHIPS -> ShipsGameScreen(battleState, battle, onLeave = requestLeave)
+                    room != null && room.game == GameKind.CONNECT4 -> ConnectFourGameScreen(battleState, battle, onLeave = requestLeave)
                     room != null -> GameScreen(battleState, battle, onLeave = requestLeave)
                     dest == Dest.SHIPS -> SoloShipsScreen(shipsState, ships, onHome = { dest = Dest.HOME })
+                    dest == Dest.CONNECT4 -> SoloConnectFourScreen(connectFourState, connectFour, onHome = { dest = Dest.HOME })
                     dest == Dest.SOLO -> SoloScreen(soloState, solo, onHome = { dest = Dest.HOME })
                     dest == Dest.PROFILE -> ProfileScreen(
                         profile, battleState.busy, app, battle, updateState,
@@ -132,6 +138,7 @@ fun ArcadeSudokuApp(
                         onBattle = { dest = Dest.BATTLE },
                         onProfile = { dest = Dest.PROFILE },
                         onShips = { dest = Dest.SHIPS },
+                        onConnectFour = { dest = Dest.CONNECT4 },
                         partnerBusy = battleState.busy,
                         onPlayWithPartner = battle::playWithPartner,
                         onInvitePartner = battle::invitePartner,

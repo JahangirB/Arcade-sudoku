@@ -8,7 +8,11 @@ import org.json.JSONObject
 /** The games a battle room can hold. */
 enum class GameKind(val key: String, val label: String) {
     SUDOKU("sudoku", "Sudoku"),
-    SHIPS("ships", "Ship Battle");
+    SHIPS("ships", "Ship Battle"),
+    CONNECT4("connect4", "Connect Four");
+
+    /** Played in turns with moves, sharing the server's turn rules. */
+    val turnBased get() = this == CONNECT4
 
     companion object {
         fun from(key: String?) = entries.firstOrNull { it.key == key } ?: SUDOKU
@@ -52,6 +56,18 @@ data class ShipsView(
     val lastShotByMe: Boolean?,
 )
 
+/** A turn game (Connect Four) as one player sees it. */
+data class TurnsView(
+    /** "me", "opponent" or null when nobody is to move. */
+    val turn: String?,
+    /** Connect Four: 42 cells from the top row, 'm' your discs, 'o' the opponent's, '.' empty. */
+    val board: String?,
+    /** The winning cells once someone has four in a row. */
+    val winLine: List<Int>,
+    val lastMoveByMe: Boolean?,
+    val lastCell: Int?,
+)
+
 /** A player's latest reaction; [seq] goes up with every new one. */
 data class EmojiEvent(val reaction: Reaction, val seq: Int)
 
@@ -86,11 +102,12 @@ data class RoomState(
     val solution: String?,
     /** "me", "opponent" or null while nobody has won. */
     val winner: String?,
-    /** "solved", "forfeit" or "timeout". */
+    /** "solved", "sunk", "four", "draw", "forfeit" or "timeout". */
     val endReason: String?,
     val me: PlayerInfo,
     val opponent: PlayerInfo?,
     val ships: ShipsView?,
+    val turns: TurnsView?,
     val serverTime: Long,
 ) {
     val isHost get() = role == "host"
@@ -111,6 +128,7 @@ fun parseRoom(json: JSONObject) = RoomState(
     me = parsePlayer(json.getJSONObject("me")),
     opponent = json.optJSONObject("opponent")?.let(::parsePlayer),
     ships = json.optJSONObject("ships")?.let(::parseShips),
+    turns = json.optJSONObject("turns")?.let(::parseTurns),
     serverTime = json.getLong("serverTime"),
 )
 
@@ -138,6 +156,14 @@ private fun parseShips(json: JSONObject) = ShipsView(
     sunkEnemy = json.optJSONArray("sunkEnemy").ships(),
     enemyFleet = if (json.isNull("enemyFleet")) null else json.optJSONArray("enemyFleet").ships(),
     lastShotByMe = json.optJSONObject("lastShot")?.optString("by")?.let { it == "me" },
+)
+
+private fun parseTurns(json: JSONObject) = TurnsView(
+    turn = json.stringOrNull("turn"),
+    board = json.stringOrNull("board"),
+    winLine = json.optJSONArray("winLine")?.let { a -> (0 until a.length()).map { a.optInt(it) } }.orEmpty(),
+    lastMoveByMe = json.optJSONObject("lastMove")?.optString("by")?.let { it == "me" },
+    lastCell = json.optJSONObject("lastMove")?.optInt("cell"),
 )
 
 private fun JSONArray?.objects(): List<JSONObject> =

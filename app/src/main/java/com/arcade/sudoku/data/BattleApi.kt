@@ -65,6 +65,9 @@ class BattleApi(scriptUrl: String) : BattleBackend {
     override suspend fun fire(code: String, playerId: String, x: Int, y: Int): JSONObject =
         throw ApiException(SHIPS_UNSUPPORTED)
 
+    override suspend fun move(code: String, playerId: String, move: JSONObject): JSONObject =
+        throw ApiException(SHIPS_UNSUPPORTED)
+
     override suspend fun leave(code: String, playerId: String) {
         call("leave", "code" to code, "playerId" to playerId)
     }
@@ -119,7 +122,7 @@ class BattleApi(scriptUrl: String) : BattleBackend {
         const val MAX_REDIRECTS = 5
         const val DEPLOY_HINT =
             "Check the link and that the script is deployed as a web app with access for \"Anyone\"."
-        const val SHIPS_UNSUPPORTED = "Ship Battle needs the Cloudflare server or a nearby battle."
+        const val SHIPS_UNSUPPORTED = "This game needs the Cloudflare server or a nearby battle."
         const val NOT_A_GAME_SERVER = "That link is not a Sudoku Battle server. $DEPLOY_HINT"
     }
 }

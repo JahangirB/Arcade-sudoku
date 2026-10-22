@@ -7,6 +7,7 @@ import com.arcade.sudoku.data.GameKind
 import com.arcade.sudoku.data.Reaction
 import com.arcade.sudoku.data.toJson
 import com.arcade.sudoku.game.Generator
+import com.arcade.sudoku.game.connect4.ConnectFour
 import com.arcade.sudoku.game.ships.Fleet
 import com.arcade.sudoku.game.ships.Sea
 import com.arcade.sudoku.game.ships.Ship
@@ -58,13 +59,24 @@ class LocalRoom(
     private var emojiSeq = 0
     private var turn: String? = null
     private var lastShot: Pair<String, Shot>? = null
+    // Turn games (Connect Four)
+    private var firstTurn: String? = null
+    private var c4Board: String? = null
+    private var winLine: List<Int>? = null
+    private var lastMove: Pair<String, Int>? = null
     val players = mutableMapOf<String, Player?>(HOST to newPlayer(hostName, hostAvatar), GUEST to null)
 
     fun playerId(role: String) = players.getValue(role)!!.id
 
-    /** Joins as guest, or reconnects when [playerId] belongs to the room. Returns the role. */
-    fun join(name: String, avatar: Avatar?, playerId: String?): String {
+    /**
+     * Joins as guest, or reconnects when [playerId] belongs to the room. Returns the role.
+     * [games] lists the games the joining app knows (null for apps that predate the list).
+     */
+    fun join(name: String, avatar: Avatar?, playerId: String?, games: List<String>? = null): String {
         if (status == "closed") throw ApiException("The host closed this battle.", fatal = true, reason = "closed")
+        if (game.key !in (games ?: OLD_APP_GAMES)) {
+            throw ApiException("This game needs the latest Game Suite. Update the app to join.", fatal = true, reason = "update_needed")
+        }
         players.entries.firstOrNull { it.value?.id == playerId && playerId != null }?.let { return it.key }
         if (playerId != null) throw ApiException("You are not part of this battle.", fatal = true, reason = "not_member")
         val guest = players[GUEST]
@@ -180,6 +192,57 @@ class LocalRoom(
         version++
     }
 
+    /** Turn games: ready (or not) for the next round; the starting player alternates. */
+    fun setTurnReady(role: String, ready: Boolean, now: Long, random: Random = Random.Default) {
+        if (status != "lobby" && status != "finished") {
+            throw ApiException("You can only get ready in the lobby or after a match.")
+        }
+        val guest = players[GUEST] ?: throw ApiException("Waiting for an opponent to join.")
+        if (players.getValue(other(role))!!.left) throw ApiException("Your opponent has left the battle.")
+        players.getValue(role)!!.ready = ready
+        if (host.ready && guest.ready) {
+            val first = firstTurn?.let { other(it) } ?: if (random.nextBoolean()) HOST else GUEST
+            round++
+            status = "started"
+            startAt = now
+            winner = null
+            endReason = null
+            firstTurn = first
+            turn = first
+            c4Board = ConnectFour.EMPTY
+            winLine = null
+            lastMove = null
+            for (p in listOf(host, guest)) {
+                p.ready = false
+                p.finishedAt = null
+            }
+        }
+        version++
+    }
+
+    /** Connect Four: drops [role]'s disc into [col]. */
+    fun move(role: String, col: Int, now: Long) {
+        if (!game.turnBased || status != "started") throw ApiException("The game is not running.")
+        if (turn != role) throw ApiException("It's not your turn.")
+        val board = c4Board!!
+        if (col !in 0 until ConnectFour.COLS) throw ApiException("Pick a column on the board.")
+        val cell = ConnectFour.landing(board, col) ?: throw ApiException("That column is full.")
+        val next = ConnectFour.drop(board, cell, role[0])
+        c4Board = next
+        lastMove = role to cell
+        val line = ConnectFour.winLine(next, cell)
+        when {
+            line != null -> {
+                winLine = line
+                players.getValue(role)!!.finishedAt = now
+                endMatch(role, "four")
+            }
+            ConnectFour.isFull(next) -> endMatch(null, "draw")
+            else -> turn = other(role)
+        }
+        version++
+    }
+
     /** Stores a board during a match; returns true if anything changed. */
     fun submitBoard(role: String, board: String, now: Long): Boolean {
         val player = players.getValue(role)!!
@@ -247,7 +310,7 @@ class LocalRoom(
         return true
     }
 
-    private fun endMatch(winnerRole: String, reason: String) {
+    private fun endMatch(winnerRole: String?, reason: String) {
         winner = winnerRole
         endReason = reason
         status = "finished"
@@ -283,7 +346,21 @@ class LocalRoom(
             .put("me", playerView(players.getValue(role)!!, shown == "finished" || game == GameKind.SHIPS, now))
             .put("opponent", opponent?.let { playerView(it, true, now) } ?: JSONObject.NULL)
             .put("ships", if (game == GameKind.SHIPS) shipsView(role, shown) else JSONObject.NULL)
+            .put("turns", if (game.turnBased) turnsView(role, shown) else JSONObject.NULL)
     }
+
+    /** The board from [role]'s side: 'm' for their discs, 'o' for the opponent's. */
+    private fun turnsView(role: String, shown: String): JSONObject = JSONObject()
+        .put("turn", if (shown == "playing") (if (turn == role) "me" else "opponent") else JSONObject.NULL)
+        .put(
+            "board",
+            c4Board?.map { c -> if (c == '.') '.' else if (c == role[0]) 'm' else 'o' }?.joinToString("") ?: JSONObject.NULL,
+        )
+        .put("winLine", winLine?.let { org.json.JSONArray(it) } ?: JSONObject.NULL)
+        .put(
+            "lastMove",
+            lastMove?.let { (by, cell) -> JSONObject().put("by", if (by == role) "me" else "opponent").put("cell", cell) } ?: JSONObject.NULL,
+        )
 
     private fun shipsView(role: String, shown: String): JSONObject {
         val me = players.getValue(role)!!
@@ -329,6 +406,8 @@ class LocalRoom(
         const val COUNTDOWN_MS = 5000L
         const val FORFEIT_MS = 45_000L
         const val EMOJI_INTERVAL_MS = 1500L
+        // What apps from before the version check could play; they don't say which games they know.
+        val OLD_APP_GAMES = listOf("sudoku", "ships")
 
         fun other(role: String) = if (role == HOST) GUEST else HOST
 

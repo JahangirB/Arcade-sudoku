@@ -29,7 +29,12 @@ quick **reactions** (👍 👏 🔥 😂 😮 😅 🤔 😎 ❤️ ⏰). The fi
   you take turns firing at each other's sea. A hit lets you fire again; the first to sink the
   whole fleet wins. Play against the computer, online with your partner (Cloudflare server)
   or nearby. Tap **Shuffle** until you like your fleet, then **Ready**. The server keeps both
-  fleets, so neither phone can peek; enemy ships are revealed as they sink.
+  fleets, so neither phone can peek; enemy ships are revealed as they sink. Pick the look of
+  the ships in *Profile → Appearance*: **Toy Harbor** or **Pirate Wood**.
+- **Connect Four:** take turns dropping discs into seven columns; four in a row across, down
+  or diagonally wins, and a full board is a draw. Play against the computer (Easy, Medium,
+  Hard), online with your partner (Cloudflare server) or nearby. Both tap **Ready**; who
+  starts swaps every round. If one phone has an older app, it is asked to update first.
 
 ## Playing with your partner
 
@@ -62,10 +67,11 @@ clues you get. Every puzzle has exactly one solution.
 
 The **profile icon** (top right of the home screen) holds all setup:
 
-- your **name** and **avatar** (🦊 🐱 🐶 🐼 🦉 🐸 🐯 🦄 🤖 👽 🦁 🐧), which your opponent sees
+- your **name** and **avatar** (fox, cat, dog, panda, owl, frog, tiger, unicorn, robot, alien,
+  lion or penguin, drawn by the app so both phones show the same picture), which your opponent sees
 - the **server link** for online battles (Google Script or Cloudflare), the **server
   password** if the host set one, plus *Paste invite* and *Test link*
-- **appearance** (system, light or dark)
+- **appearance** (system, light or dark, and the Ship Battle style)
 - your **statistics** (wins and best time per level, battles won and lost)
 
 ## How a battle works
@@ -298,9 +304,11 @@ Requires Android 8.0 (API 26) or newer.
 | --- | --- |
 | `backend/Code.gs` | Apps Script web app: rooms, puzzle generator, start sync, progress, winner |
 | `backend/test/` | Node tests that run `Code.gs` against mocked Apps Script services |
-| `backend/cloudflare/` | Cloudflare Worker: one Durable Object per room (`src/room.js`: Sudoku and Ship Battle rules) and a Directory object for invitations (`src/directory.js`, `src/push.js`), with unit and end-to-end tests |
+| `backend/cloudflare/` | Cloudflare Worker: one Durable Object per room (`src/room.js`: Sudoku, Ship Battle and turn-game rules; `src/connect4.js`) and a Directory object for invitations (`src/directory.js`, `src/push.js`), with unit and end-to-end tests |
 | `app/src/main/java/com/arcade/sudoku/data/` | Server clients (`BattleApi` for Apps Script, `CloudflareBattle`), response models, invites, profile, updater |
 | `app/src/main/java/com/arcade/sudoku/game/ships/` | Ship Battle rules, random fleets and the computer opponent |
+| `app/src/main/java/com/arcade/sudoku/game/connect4/` | Connect Four rules and the computer opponent |
+| `app/src/main/java/com/arcade/sudoku/ui/art/` | The app's own drawings: avatars, animated reactions and the ship styles |
 | `app/src/main/java/com/arcade/sudoku/push/` | Invitations: Firebase setup, notifications with Play/Decline, the invite endpoints |
 | `app/src/main/java/com/arcade/sudoku/data/nearby/` | Nearby battles: `LocalRoom` (the rules, run on the host phone), `NearbyHost`, `NearbyGuest` |
 | `app/src/main/java/com/arcade/sudoku/game/` | Board, notes/undo, puzzle generator and the solo game rules |
