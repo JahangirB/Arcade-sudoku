@@ -129,6 +129,13 @@ npx wrangler login     # opens the browser to approve
 npx wrangler deploy    # prints your server link
 ```
 
+**If the Cloudflare build fails** with *"Could not detect a directory containing static
+files"*, the build ran from an old copy of the code without the root `wrangler.jsonc`.
+Pull the latest code into your copy (on GitHub, **Sync fork**) and press **Retry build** in
+*Workers & Pages → arcade-sudoku → Deployments*. Both the repository root and
+`backend/cloudflare` can be deployed. If the log says the Worker name doesn't match, name
+the Worker `arcade-sudoku` or change `name` in `wrangler.jsonc` to your Worker's name.
+
 **Optional password (recommended).** Anyone with the link could open rooms on your
 server; a password keeps it to people you invite. In the Cloudflare dashboard open
 *Workers & Pages → arcade-sudoku → Settings → Variables and Secrets*, add a **Secret**

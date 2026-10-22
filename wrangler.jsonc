@@ -1,0 +1,15 @@
+// Lets Cloudflare deploy the battle server straight from the repository root (for example
+// Workers Builds without a root directory set). Same settings as
+// backend/cloudflare/wrangler.jsonc; a test checks that the two stay in sync.
+{
+  "$schema": "backend/cloudflare/node_modules/wrangler/config-schema.json",
+  "name": "arcade-sudoku",
+  "main": "backend/cloudflare/src/index.js",
+  "compatibility_date": "2025-09-01",
+  "durable_objects": {
+    "bindings": [{ "name": "ROOMS", "class_name": "Room" }]
+  },
+  // SQLite-backed Durable Objects are available on the free plan.
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }],
+  "observability": { "enabled": true }
+}
