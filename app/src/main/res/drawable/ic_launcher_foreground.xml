@@ -1,17 +1,55 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- A white 3x3 sudoku box with two lightened cells, inside the 66dp safe zone. -->
+<!-- Globe & Die: a die resting on a globe, for playing with a partner anywhere. Scaled into the 66dp safe zone. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path
-        android:fillColor="#59FFFFFF"
-        android:pathData="M48,48h12v12h-12z" />
-    <path
-        android:fillColor="#8CFFFFFF"
-        android:pathData="M60,36h12v12h-12z" />
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M36,34h36v2h-36z M36,46h36v2h-36z M36,58h36v2h-36z M36,70h36v2h-36z M34,36h2v36h-2z M46,36h2v36h-2z M58,36h2v36h-2z M70,36h2v36h-2z" />
+    <group
+        android:pivotX="58"
+        android:pivotY="53.5"
+        android:scaleX="0.8"
+        android:scaleY="0.8"
+        android:translateX="-4"
+        android:translateY="0.5">
+        <!-- Globe, with its pressed edge -->
+        <path
+            android:fillColor="#FF2B2440"
+            android:pathData="M23,64a27,27 0,1 0,54 0a27,27 0,1 0,-54 0z" />
+        <path
+            android:fillColor="#FF10A2B6"
+            android:strokeColor="#FF2B2440"
+            android:strokeWidth="4"
+            android:pathData="M23,60a27,27 0,1 0,54 0a27,27 0,1 0,-54 0z" />
+        <path
+            android:strokeColor="#66FFFFFF"
+            android:strokeWidth="1.5"
+            android:pathData="M38,60a12,27 0,1 0,24 0a12,27 0,1 0,-24 0z M23,60H77" />
+        <path
+            android:fillColor="#FF20A47B"
+            android:strokeColor="#FF2B2440"
+            android:strokeWidth="2"
+            android:strokeLineJoin="round"
+            android:pathData="M32,50C38,44 46,48 44,56C42,63 34,62 31,58Z M54,66C60,62 68,66 66,74C64,80 56,80 53,75Z" />
+        <!-- Die, tilted -->
+        <group
+            android:pivotX="76"
+            android:pivotY="34"
+            android:rotation="14">
+            <path
+                android:fillColor="#FF2B2440"
+                android:pathData="M69,23h14a7,7 0,0 1,7 7v14a7,7 0,0 1,-7 7h-14a7,7 0,0 1,-7 -7v-14a7,7 0,0 1,7 -7z" />
+            <path
+                android:fillColor="#FFFFFFFF"
+                android:strokeColor="#FF2B2440"
+                android:strokeWidth="3.5"
+                android:pathData="M69,20h14a7,7 0,0 1,7 7v14a7,7 0,0 1,-7 7h-14a7,7 0,0 1,-7 -7v-14a7,7 0,0 1,7 -7z" />
+            <path
+                android:fillColor="#FF2B2440"
+                android:pathData="M66.4,27a2.6,2.6 0,1 0,5.2 0a2.6,2.6 0,1 0,-5.2 0z M80.4,41a2.6,2.6 0,1 0,5.2 0a2.6,2.6 0,1 0,-5.2 0z" />
+            <path
+                android:fillColor="#FFFF6B6B"
+                android:pathData="M73.4,34a2.6,2.6 0,1 0,5.2 0a2.6,2.6 0,1 0,-5.2 0z" />
+        </group>
+    </group>
 </vector>
