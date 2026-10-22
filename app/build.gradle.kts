@@ -8,6 +8,10 @@ plugins {
 // than the one before. Local builds are version 1 and never count as newer than a release.
 val buildNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
 
+// The id Android and Firebase know the app by. The Kotlin code keeps its original
+// com.arcade.sudoku package (the namespace below); only this id changed with the rename.
+val appId = "com.gamesuite.app"
+
 // Push invitations use Firebase, which is optional: put google-services.json from the Firebase
 // console into app/ to switch them on. It is read by hand (no Google Services plugin), so the
 // app still builds without it and invitations then stay off.
@@ -18,7 +22,7 @@ val firebase: Map<String, String> = file("google-services.json").takeIf { it.exi
     @Suppress("UNCHECKED_CAST")
     val client = (json["client"] as List<Map<String, Any?>>).first { c ->
         val info = c["client_info"] as Map<String, Any?>
-        (info["android_client_info"] as Map<String, Any?>)["package_name"] == "com.arcade.sudoku"
+        (info["android_client_info"] as Map<String, Any?>)["package_name"] == appId
     }
     @Suppress("UNCHECKED_CAST")
     mapOf(
@@ -34,7 +38,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.arcade.sudoku"
+        applicationId = appId
         minSdk = 26
         targetSdk = 35
         versionCode = buildNumber

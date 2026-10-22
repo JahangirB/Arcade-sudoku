@@ -212,7 +212,7 @@ Firebase Cloud Messaging. It is free. The host does this once:
 
 1. Open the [Firebase console](https://console.firebase.google.com), **Create a project**
    (any name, e.g. `game-suite`; Google Analytics can be off).
-2. In the project, **Add app → Android**. Package name: **`com.arcade.sudoku`** (exactly this;
+2. In the project, **Add app → Android**. Package name: **`com.gamesuite.app`** (exactly this;
    it is the app's internal id). App nickname: Game Suite. Register, then **download
    `google-services.json`** and skip the remaining steps. Put the file in `app/` of this
    repository (or send it to whoever builds the app). It identifies your Firebase project
@@ -230,6 +230,12 @@ If an invitation fails with a permission error, open the Google Cloud console fo
 project and make sure **Firebase Cloud Messaging API** is enabled.
 
 ## 2. Install the Android app
+
+> **Coming from Arcade Sudoku (version 1.0.9 or older)?** With the rename the app got a new
+> internal id (`com.gamesuite.app`), so Android treats it as a new app: uninstall the old one,
+> install from the Download button, and set your name, avatar and server link again in the
+> profile. Play one online battle with your partner to save them again. Old apps that update
+> themselves would install the new one next to the old; just remove the old one afterwards.
 
 - **Download:** use the **Download** button at the top of this page. It always points to the
   newest build, which CI publishes as the *latest* release whenever the default branch changes.
