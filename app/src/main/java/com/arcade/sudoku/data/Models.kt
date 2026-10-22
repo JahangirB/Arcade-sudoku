@@ -9,19 +9,25 @@ enum class RoomStatus { WAITING, LOBBY, COUNTDOWN, PLAYING, FINISHED;
     }
 }
 
-enum class Difficulty(val key: String, val label: String) {
-    EASY("easy", "Easy"),
-    MEDIUM("medium", "Medium"),
-    HARD("hard", "Hard");
+/** [holes] is the number of empty cells to aim for; it must match DIFFICULTY_HOLES in backend/Code.gs. */
+enum class Difficulty(val key: String, val label: String, val holes: Int) {
+    BEGINNER("beginner", "Beginner", 30),
+    EASY("easy", "Easy", 38),
+    MEDIUM("medium", "Medium", 46),
+    HARD("hard", "Hard", 50),
+    EXPERT("expert", "Expert", 54),
+    MASTER("master", "Master", 56);
 
     companion object {
-        fun from(value: String) = entries.firstOrNull { it.key == value } ?: MEDIUM
+        fun from(value: String?) = entries.firstOrNull { it.key == value } ?: MEDIUM
     }
 }
 
 data class PlayerInfo(
     val name: String,
     val ready: Boolean,
+    /** The level this player is ready for; null until they choose one. */
+    val difficulty: Difficulty?,
     /** Percentage of correctly solved cells; only sent for the opponent (and for you after a match). */
     val progress: Int?,
     val finishMs: Long?,
@@ -33,7 +39,8 @@ data class RoomState(
     val code: String,
     val role: String,
     val status: RoomStatus,
-    val difficulty: Difficulty,
+    /** The level of the current or last round; null before the first round starts. */
+    val difficulty: Difficulty?,
     val round: Int,
     val startAt: Long?,
     val puzzle: String?,
@@ -53,7 +60,7 @@ fun parseRoom(json: JSONObject) = RoomState(
     code = json.getString("code"),
     role = json.getString("role"),
     status = RoomStatus.from(json.getString("status")),
-    difficulty = Difficulty.from(json.optString("difficulty")),
+    difficulty = json.stringOrNull("difficulty")?.let { Difficulty.from(it) },
     round = json.optInt("round"),
     startAt = json.longOrNull("startAt"),
     puzzle = json.stringOrNull("puzzle"),
@@ -68,6 +75,7 @@ fun parseRoom(json: JSONObject) = RoomState(
 private fun parsePlayer(json: JSONObject) = PlayerInfo(
     name = json.optString("name", "Player"),
     ready = json.optBoolean("ready"),
+    difficulty = json.stringOrNull("difficulty")?.let { Difficulty.from(it) },
     progress = if (json.isNull("progress")) null else json.optInt("progress"),
     finishMs = json.longOrNull("finishMs"),
     left = json.optBoolean("left"),

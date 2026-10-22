@@ -1,7 +1,9 @@
 package com.arcade.sudoku.ui.screens
 
 import android.content.Intent
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,123 +14,187 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.arcade.sudoku.data.Difficulty
 import com.arcade.sudoku.data.Invite
 import com.arcade.sudoku.data.PlayerInfo
+import com.arcade.sudoku.data.Profile
+import com.arcade.sudoku.data.RoomState
 import com.arcade.sudoku.ui.BattleViewModel
-import com.arcade.sudoku.ui.UiState
-import com.arcade.sudoku.ui.theme.Arcade
+import com.arcade.sudoku.ui.theme.AppTheme
+import com.arcade.sudoku.ui.theme.OpponentColor
 
 @Composable
-fun LobbyScreen(state: UiState, vm: BattleViewModel, onLeave: () -> Unit) {
-    val room = state.room ?: return
+fun LobbyScreen(room: RoomState, profile: Profile, busy: Boolean, vm: BattleViewModel, onLeave: () -> Unit) {
+    val p = AppTheme.palette
     val context = LocalContext.current
     val opponent = room.opponent?.takeIf { !it.left }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        NeonText("BATTLE LOBBY", Arcade.Cyan, 28)
-
-        SectionCard("Secret code", accent = Arcade.Magenta) {
-            NeonText(room.code, Arcade.Yellow, 36, Modifier.fillMaxWidth())
-            Text(
-                state.scriptUrl,
-                color = Arcade.Muted,
-                fontSize = 12.sp,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (room.isHost) {
-                OutlinedButton(
-                    onClick = {
-                        val send = Intent(Intent.ACTION_SEND)
-                            .setType("text/plain")
-                            .putExtra(Intent.EXTRA_TEXT, Invite(state.scriptUrl, room.code).toShareText())
-                        context.startActivity(Intent.createChooser(send, "Invite your opponent"))
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(Icons.Filled.Share, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Share link + code")
-                }
-            }
-            Text("Difficulty: ${room.difficulty.label}", color = Arcade.Text)
-        }
-
-        SectionCard("Players") {
-            PlayerRow(room.me, isMe = true)
-            if (opponent != null) {
-                PlayerRow(opponent, isMe = false)
-            } else {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Arcade.Magenta)
-                    Spacer(Modifier.width(12.dp))
-                    Text("Waiting for your opponent to join…", color = Arcade.Muted)
-                }
-            }
-        }
-
-        Button(
-            onClick = vm::toggleReady,
-            enabled = opponent != null && !state.busy,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = if (room.me.ready) Arcade.SurfaceHigh else Arcade.Green,
-                contentColor = if (room.me.ready) Arcade.Text else Arcade.Background,
-            ),
-            modifier = Modifier.fillMaxWidth().height(56.dp),
+    Column(Modifier.fillMaxSize()) {
+        ScreenTopBar("Battle lobby", onLeave)
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text(
-                if (room.me.ready) "NOT READY" else "I'M READY",
-                fontWeight = FontWeight.Black,
-                letterSpacing = 2.sp,
-            )
+            AppCard("Secret code") {
+                Text(
+                    room.code,
+                    color = p.primary,
+                    fontSize = 36.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                    letterSpacing = 6.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(profile.scriptUrl, color = p.muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (room.isHost) {
+                    OutlinedButton(
+                        onClick = {
+                            val send = Intent(Intent.ACTION_SEND)
+                                .setType("text/plain")
+                                .putExtra(Intent.EXTRA_TEXT, Invite(profile.scriptUrl, room.code).toShareText())
+                            context.startActivity(Intent.createChooser(send, "Invite your opponent"))
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Filled.Share, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Share link + code")
+                    }
+                }
+            }
+
+            AppCard("Players") {
+                PlayerRow(room.me, isMe = true, color = p.primary)
+                if (opponent != null) {
+                    PlayerRow(opponent, isMe = false, color = OpponentColor)
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = p.primary)
+                        Spacer(Modifier.width(12.dp))
+                        Text("Waiting for your opponent to join…", color = p.muted)
+                    }
+                }
+            }
+
+            AppCard("Choose the level") {
+                LevelPicker(room, busy, onPick = vm::chooseLevel)
+            }
         }
-        Text(
-            "The battle starts for both of you at the same moment once both players are ready.",
-            color = Arcade.Muted,
-            fontSize = 13.sp,
-        )
-        TextButton(onClick = onLeave) { Text("Leave lobby", color = Arcade.Red) }
     }
 }
 
 @Composable
-private fun PlayerRow(player: PlayerInfo, isMe: Boolean) {
+private fun PlayerRow(player: PlayerInfo, isMe: Boolean, color: Color) {
+    val p = AppTheme.palette
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-        StatusDot(if (player.ready) Arcade.Green else Arcade.Muted)
+        Avatar(player.name, color)
         Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(player.name + if (isMe) " (you)" else "", color = Arcade.Text, fontWeight = FontWeight.SemiBold)
-        }
         Text(
-            if (player.ready) "READY" else "NOT READY",
-            color = if (player.ready) Arcade.Green else Arcade.Muted,
-            fontWeight = FontWeight.Bold,
-            fontSize = 12.sp,
+            player.name + if (isMe) " (you)" else "",
+            color = p.text,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.weight(1f),
         )
+        if (player.ready && player.difficulty != null) {
+            Pill("Ready · ${player.difficulty.label}", p.good)
+        } else {
+            Pill("Choosing…", p.muted)
+        }
+    }
+}
+
+/**
+ * The level buttons plus the status line. Tapping a level marks you ready for it; the battle
+ * starts only when both players are ready with the same level.
+ */
+@Composable
+fun LevelPicker(room: RoomState, busy: Boolean, onPick: (Difficulty) -> Unit) {
+    val p = AppTheme.palette
+    val opponent = room.opponent?.takeIf { !it.left }
+    val canPick = opponent != null && !busy
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Difficulty.entries.chunked(3).forEach { rowLevels ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                rowLevels.forEach { level ->
+                    val mine = room.me.ready && room.me.difficulty == level
+                    val theirs = opponent?.ready == true && opponent.difficulty == level
+                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Surface(
+                            onClick = { onPick(level) },
+                            enabled = canPick,
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (mine) p.primary else p.accent,
+                            border = if (theirs && !mine) BorderStroke(2.dp, OpponentColor) else null,
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    (if (mine) "✓ " else "") + level.label,
+                                    color = if (mine) p.onPrimary else if (canPick) p.primary else p.muted,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 15.sp,
+                                )
+                            }
+                        }
+                        Text(
+                            if (theirs) "${opponent?.name}'s pick" else " ",
+                            color = OpponentColor,
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+        }
+
+        val (message, color) = levelStatus(room, opponent)
+        Text(message, color = color, fontSize = 14.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+    }
+}
+
+private val Warning = Color(0xFFE08A00)
+
+@Composable
+private fun levelStatus(room: RoomState, opponent: PlayerInfo?): Pair<String, Color> {
+    val p = AppTheme.palette
+    val mine = room.me.difficulty?.takeIf { room.me.ready }
+    val theirs = opponent?.difficulty?.takeIf { opponent.ready }
+    return when {
+        opponent == null -> "Waiting for an opponent to join before you can choose a level." to p.muted
+        mine != null && theirs != null && mine != theirs ->
+            "Levels don't match: you chose ${mine.label}, ${opponent.name} chose ${theirs.label}. " +
+                "Both players must choose the same level before the game can start." to Warning
+        mine != null && theirs != null -> "Both chose ${mine.label}. Starting…" to p.good
+        mine != null -> "You chose ${mine.label}. Waiting for ${opponent.name} to choose a level… " +
+            "(tap it again to cancel)" to p.muted
+        theirs != null -> "${opponent.name} chose ${theirs.label}. Choose ${theirs.label} too to start, " +
+            "or pick another level." to p.muted
+        else -> "Both players choose a level. The game starts when you both pick the same one." to p.muted
     }
 }

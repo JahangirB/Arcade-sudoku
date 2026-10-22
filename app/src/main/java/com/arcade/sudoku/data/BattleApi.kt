@@ -22,13 +22,16 @@ class BattleApi(scriptUrl: String) {
 
     suspend fun ping() = call("ping")
 
-    suspend fun create(code: String, name: String, difficulty: Difficulty) =
-        call("create", "code" to code, "name" to name, "difficulty" to difficulty.key)
+    suspend fun create(code: String, name: String) = call("create", "code" to code, "name" to name)
 
     suspend fun join(code: String, name: String) = call("join", "code" to code, "name" to name)
 
-    suspend fun ready(code: String, playerId: String, ready: Boolean) =
-        call("ready", "code" to code, "playerId" to playerId, "ready" to ready.toString())
+    /** Marks the player ready for [difficulty], or not ready (difficulty is then ignored). */
+    suspend fun ready(code: String, playerId: String, ready: Boolean, difficulty: Difficulty?) =
+        call(
+            "ready", "code" to code, "playerId" to playerId,
+            "ready" to ready.toString(), "difficulty" to difficulty?.key,
+        )
 
     suspend fun sync(code: String, playerId: String, board: String?) =
         call("sync", "code" to code, "playerId" to playerId, "board" to board)

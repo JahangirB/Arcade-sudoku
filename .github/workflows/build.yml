@@ -32,3 +32,28 @@ jobs:
         with:
           name: arcade-sudoku-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
+
+  # Publishes the APK as the "latest" release, which the README download button points to.
+  # Only runs for pushes to the repository's default branch.
+  release:
+    name: Publish download
+    needs: [backend, android]
+    if: github.event_name == 'push' && github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: arcade-sudoku-debug-apk
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mv app-debug.apk ArcadeSudoku.apk
+          gh release delete latest --cleanup-tag --yes --repo "$GITHUB_REPOSITORY" || true
+          gh release create latest ArcadeSudoku.apk \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Arcade Sudoku (latest build)" \
+            --notes "Built from commit ${GITHUB_SHA::7}. Install ArcadeSudoku.apk on an Android phone (allow installs from unknown sources)."

@@ -1,17 +1,17 @@
 package com.arcade.sudoku.ui
 
 import android.app.Application
-import android.content.Context
-import androidx.core.content.edit
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.arcade.sudoku.data.ApiException
 import com.arcade.sudoku.data.BattleApi
 import com.arcade.sudoku.data.Difficulty
 import com.arcade.sudoku.data.Invite
+import com.arcade.sudoku.data.ProfileStore
 import com.arcade.sudoku.data.RoomState
 import com.arcade.sudoku.data.RoomStatus
 import com.arcade.sudoku.data.parseRoom
+import com.arcade.sudoku.game.BoardState
 import com.arcade.sudoku.game.Sudoku
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,25 +31,19 @@ import org.json.JSONObject
 import java.io.IOException
 import kotlin.coroutines.cancellation.CancellationException
 
-data class UiState(
-    val scriptUrl: String = "",
-    val playerName: String = "",
+data class BattleUiState(
     val hostCode: String = Invite.randomCode(),
     val joinCode: String = "",
-    val difficulty: Difficulty = Difficulty.MEDIUM,
     val busy: Boolean = false,
     val message: String? = null,
     val room: RoomState? = null,
-    val cells: List<Int> = emptyList(),
-    val givens: List<Boolean> = emptyList(),
-    val conflicts: Set<Int> = emptySet(),
+    val board: BoardState? = null,
     val selected: Int? = null,
+    val notesMode: Boolean = false,
     /** Server clock minus local clock, so both phones count down to the same instant. */
     val clockOffsetMs: Long = 0,
     val reconnecting: Boolean = false,
 ) {
-    fun serverNow() = System.currentTimeMillis() + clockOffsetMs
-
     /** Like the server status, but switches to PLAYING the moment the shared start time passes. */
     fun phase(serverNow: Long): RoomStatus? {
         val room = room ?: return null
@@ -61,124 +55,125 @@ data class UiState(
         }
     }
 
-    fun canEdit() = phase(serverNow()) == RoomStatus.PLAYING && cells.size == Sudoku.CELLS
+    fun serverNow() = System.currentTimeMillis() + clockOffsetMs
+
+    fun canEdit() = phase(serverNow()) == RoomStatus.PLAYING && board != null
 }
 
 class BattleViewModel(app: Application) : AndroidViewModel(app) {
-    private val prefs = app.getSharedPreferences("arcade_sudoku", Context.MODE_PRIVATE)
+    private val store = ProfileStore.get(app)
 
-    private val _state = MutableStateFlow(
-        UiState(
-            scriptUrl = prefs.getString(KEY_URL, "").orEmpty(),
-            playerName = prefs.getString(KEY_NAME, "").orEmpty(),
-        )
-    )
-    val state: StateFlow<UiState> = _state.asStateFlow()
+    private val _state = MutableStateFlow(BattleUiState())
+    val state: StateFlow<BattleUiState> = _state.asStateFlow()
 
     private var api: BattleApi? = null
     private var playerId: String? = null
     private var pollJob: Job? = null
     private val syncNow = Channel<Unit>(Channel.CONFLATED)
     private var loadedRound = -1
+    private var recordedRound = -1
     private var lastSentBoard: String? = null
     private var bestRoundTripMs = Long.MAX_VALUE
 
     // --- Start screen -------------------------------------------------------------------------
 
-    fun setScriptUrl(value: String) = _state.update { it.copy(scriptUrl = value.trim()) }
-    fun setPlayerName(value: String) = _state.update { it.copy(playerName = value.take(16)) }
     fun setHostCode(value: String) = _state.update { it.copy(hostCode = cleanCode(value)) }
     fun newHostCode() = _state.update { it.copy(hostCode = Invite.randomCode()) }
     fun setJoinCode(value: String) = _state.update { it.copy(joinCode = cleanCode(value)) }
-    fun setDifficulty(value: Difficulty) = _state.update { it.copy(difficulty = value) }
     fun dismissMessage() = _state.update { it.copy(message = null) }
 
+    /** Fills in the script link (saved to the profile) and the secret code from a shared invite. */
     fun pasteInvite(text: String?) {
         val invite = Invite.parse(text.orEmpty())
         if (invite.scriptUrl == null && invite.code == null) {
             showMessage("No invite found on the clipboard.")
             return
         }
-        _state.update {
-            it.copy(
-                scriptUrl = invite.scriptUrl ?: it.scriptUrl,
-                joinCode = invite.code ?: it.joinCode,
-            )
-        }
+        invite.scriptUrl?.let(store::setScriptUrl)
+        invite.code?.let { code -> _state.update { it.copy(joinCode = code) } }
     }
 
     fun testConnection() = runBusy {
-        val s = checkedSettings(requireName = false) ?: return@runBusy
-        BattleApi(s.scriptUrl).ping()
+        val url = checkedUrl() ?: return@runBusy
+        BattleApi(url).ping()
         showMessage("Connected to the battle server.")
     }
 
     fun host() {
-        val s = _state.value
-        if (s.hostCode.length < 4) return showMessage("The secret code needs at least 4 letters or digits.")
-        startSession { api -> api.create(s.hostCode, s.playerName, s.difficulty) }
+        val code = _state.value.hostCode
+        if (code.length < 4) return showMessage("The secret code needs at least 4 letters or digits.")
+        startSession { api, name -> api.create(code, name) }
     }
 
     fun join() {
-        val s = _state.value
-        if (s.joinCode.length < 4) return showMessage("Enter the secret code from the host.")
-        startSession { api -> api.join(s.joinCode, s.playerName) }
+        val code = _state.value.joinCode
+        if (code.length < 4) return showMessage("Enter the secret code from the host.")
+        startSession { api, name -> api.join(code, name) }
     }
 
-    private fun startSession(open: suspend (BattleApi) -> JSONObject) = runBusy {
-        val s = checkedSettings() ?: return@runBusy
-        prefs.edit {
-            putString(KEY_URL, s.scriptUrl)
-            putString(KEY_NAME, s.playerName)
-        }
-        val newApi = BattleApi(s.scriptUrl)
+    private fun startSession(open: suspend (BattleApi, String) -> JSONObject) = runBusy {
+        val url = checkedUrl() ?: return@runBusy
+        val newApi = BattleApi(url)
         val sentAt = System.currentTimeMillis()
-        val json = open(newApi)
+        val json = open(newApi, store.profile.value.name.trim())
         api = newApi
         playerId = json.getString("playerId")
         loadedRound = -1
+        recordedRound = -1
         lastSentBoard = null
         bestRoundTripMs = Long.MAX_VALUE
-        applyResponse(json, sentAt)
+        val room = applyResponse(json, sentAt, record = false)
+        // Joining a finished room must not count its old result again.
+        if (room.status == RoomStatus.FINISHED) recordedRound = room.round
         startPolling()
     }
 
-    private fun checkedSettings(requireName: Boolean = true): UiState? {
-        val s = _state.value
-        return when {
-            !s.scriptUrl.startsWith("https://") -> {
-                showMessage("Paste the host's script link (it starts with https://script.google.com).")
-                null
-            }
-            requireName && s.playerName.isBlank() -> {
-                showMessage("Enter your name first.")
-                null
-            }
-            else -> s
+    private fun checkedUrl(): String? {
+        val url = store.profile.value.scriptUrl
+        if (!url.startsWith("https://")) {
+            showMessage("Add the host's script link in your profile (top-right icon).")
+            return null
         }
+        return url
     }
 
     // --- Lobby and match ----------------------------------------------------------------------
 
-    fun toggleReady() = runBusy {
+    /**
+     * Tapping a level marks you ready for it; tapping your chosen level again cancels.
+     * The round starts once both players are ready with the same level.
+     */
+    fun chooseLevel(level: Difficulty) = runBusy {
         val room = _state.value.room ?: return@runBusy
         val id = playerId ?: return@runBusy
+        val cancel = room.me.ready && room.me.difficulty == level
         val sentAt = System.currentTimeMillis()
-        applyResponse(requireApi().ready(room.code, id, !room.me.ready), sentAt)
+        applyResponse(requireApi().ready(room.code, id, !cancel, level), sentAt)
     }
 
     fun select(index: Int) = _state.update { it.copy(selected = if (it.selected == index) null else index) }
+    fun toggleNotes() = _state.update { it.copy(notesMode = !it.notesMode) }
 
     fun enterDigit(digit: Int) {
         val s = _state.value
         val index = s.selected ?: return
-        if (!s.canEdit() || s.givens[index]) return
-        val cells = s.cells.toMutableList().also { it[index] = digit }
-        _state.update { it.copy(cells = cells, conflicts = Sudoku.conflicts(cells)) }
+        val board = s.board ?: return
+        if (!s.canEdit() || board.givens[index]) return
+        val updated = if (s.notesMode && digit != 0) board.toggleNote(index, digit) else board.place(index, digit)
+        if (updated === board) return
+        _state.update { it.copy(board = updated) }
         syncNow.trySend(Unit)
     }
 
     fun erase() = enterDigit(0)
+
+    fun undo() {
+        val s = _state.value
+        val board = s.board ?: return
+        if (!s.canEdit() || !board.canUndo) return
+        _state.update { it.copy(board = board.undo()) }
+        syncNow.trySend(Unit)
+    }
 
     fun leave() {
         val room = _state.value.room
@@ -208,7 +203,7 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
         val s = _state.value
         val room = s.room ?: return
         val id = playerId ?: return
-        val board = if (s.canEdit()) Sudoku.encode(s.cells).takeIf { it != lastSentBoard } else null
+        val board = if (s.canEdit()) Sudoku.encode(s.board!!.cells).takeIf { it != lastSentBoard } else null
         val sentAt = System.currentTimeMillis()
         try {
             val json = requireApi().sync(room.code, id, board)
@@ -226,7 +221,7 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun applyResponse(json: JSONObject, sentAt: Long): RoomState {
+    private fun applyResponse(json: JSONObject, sentAt: Long, record: Boolean = true): RoomState {
         val receivedAt = System.currentTimeMillis()
         val room = parseRoom(json)
         val roundTrip = receivedAt - sentAt
@@ -243,15 +238,13 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
             if (puzzle != null && room.round != loadedRound) {
                 loadedRound = room.round
                 lastSentBoard = null
-                val cells = Sudoku.parse(puzzle)
-                next = next.copy(
-                    cells = cells,
-                    givens = cells.map { it != 0 },
-                    conflicts = emptySet(),
-                    selected = null,
-                )
+                next = next.copy(board = BoardState.fromPuzzle(puzzle), selected = null, notesMode = false)
             }
             next
+        }
+        if (record && room.status == RoomStatus.FINISHED && room.winner != null && room.round != recordedRound) {
+            recordedRound = room.round
+            store.recordBattle(won = room.winner == "me")
         }
         return room
     }
@@ -264,8 +257,8 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
         loadedRound = -1
         _state.update {
             it.copy(
-                room = null, cells = emptyList(), givens = emptyList(), conflicts = emptySet(),
-                selected = null, reconnecting = false, message = message, hostCode = Invite.randomCode(),
+                room = null, board = null, selected = null, notesMode = false, reconnecting = false,
+                message = message, hostCode = Invite.randomCode(),
             )
         }
     }
@@ -305,9 +298,6 @@ class BattleViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private companion object {
-        const val KEY_URL = "script_url"
-        const val KEY_NAME = "player_name"
-
         fun cleanCode(value: String) = value.uppercase().filter { it in 'A'..'Z' || it in '0'..'9' }.take(12)
     }
 }

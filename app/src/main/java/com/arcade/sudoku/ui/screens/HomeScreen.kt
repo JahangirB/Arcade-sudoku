@@ -1,6 +1,10 @@
 package com.arcade.sudoku.ui.screens
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -10,154 +14,161 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.arcade.sudoku.data.Difficulty
-import com.arcade.sudoku.ui.BattleViewModel
-import com.arcade.sudoku.ui.UiState
-import com.arcade.sudoku.ui.theme.Arcade
+import com.arcade.sudoku.data.Profile
+import com.arcade.sudoku.ui.SoloUiState
+import com.arcade.sudoku.ui.theme.AppTheme
 
 @Composable
-fun HomeScreen(state: UiState, vm: BattleViewModel) {
-    val clipboard = LocalClipboardManager.current
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        NeonText("ARCADE", Arcade.Magenta, 40)
-        NeonText("SUDOKU BATTLE", Arcade.Cyan, 26)
-        Text(
-            "Same puzzle. Same start. First to solve wins.",
-            color = Arcade.Muted,
-            textAlign = TextAlign.Center,
-        )
-
-        SectionCard("Player & server") {
-            OutlinedTextField(
-                value = state.playerName,
-                onValueChange = vm::setPlayerName,
-                label = { Text("Your name") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            OutlinedTextField(
-                value = state.scriptUrl,
-                onValueChange = vm::setScriptUrl,
-                label = { Text("Google Script link") },
-                placeholder = { Text("https://script.google.com/macros/s/…/exec") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { vm.pasteInvite(clipboard.getText()?.text) }, enabled = !state.busy) {
-                    Text("Paste invite")
-                }
-                TextButton(onClick = vm::testConnection, enabled = !state.busy) { Text("Test link") }
-            }
-        }
-
-        SectionCard("Host a battle", accent = Arcade.Magenta) {
-            Text(
-                "Deploy the battle script, then share its link and this secret code with your opponent.",
-                color = Arcade.Muted,
-                fontSize = 13.sp,
-            )
-            OutlinedTextField(
-                value = state.hostCode,
-                onValueChange = vm::setHostCode,
-                label = { Text("Secret code") },
-                singleLine = true,
-                textStyle = codeStyle(),
-                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters),
-                trailingIcon = {
-                    IconButton(onClick = vm::newHostCode) { Icon(Icons.Filled.Refresh, "New code") }
-                },
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Difficulty.entries.forEach { level ->
-                    FilterChip(
-                        selected = state.difficulty == level,
-                        onClick = { vm.setDifficulty(level) },
-                        label = { Text(level.label) },
-                    )
-                }
-            }
-            BigButton("Host battle", state.busy, ButtonDefaults.buttonColors(containerColor = Arcade.Magenta), vm::host)
-        }
-
-        SectionCard("Join a battle") {
-            OutlinedTextField(
-                value = state.joinCode,
-                onValueChange = vm::setJoinCode,
-                label = { Text("Secret code from the host") },
-                singleLine = true,
-                textStyle = codeStyle(),
-                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters),
-                modifier = Modifier.fillMaxWidth(),
-            )
-            BigButton("Join battle", state.busy, ButtonDefaults.buttonColors(), vm::join)
-        }
-
-        Spacer(Modifier.height(8.dp))
-    }
-}
-
-@Composable
-private fun BigButton(
-    text: String,
-    busy: Boolean,
-    colors: androidx.compose.material3.ButtonColors,
-    onClick: () -> Unit,
+fun HomeScreen(
+    solo: SoloUiState,
+    profile: Profile,
+    onContinue: () -> Unit,
+    onNewGame: (Difficulty) -> Unit,
+    onBattle: () -> Unit,
+    onProfile: () -> Unit,
 ) {
-    Button(
-        onClick = onClick,
-        enabled = !busy,
-        colors = colors,
-        modifier = Modifier.fillMaxWidth().height(52.dp),
-    ) {
-        if (busy) {
-            CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp, color = Arcade.Background)
-        } else {
-            Text(text.uppercase(), fontWeight = FontWeight.Black, letterSpacing = 2.sp)
+    val p = AppTheme.palette
+    var pickingLevel by rememberSaveable { mutableStateOf(false) }
+
+    Box(Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp, vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    if (profile.name.isNotBlank()) {
+                        Text("Hi, ${profile.name}", color = p.muted, fontSize = 15.sp)
+                    }
+                }
+                IconButton(
+                    onClick = onProfile,
+                    modifier = Modifier.size(44.dp).clip(CircleShape).background(p.accent),
+                ) {
+                    Icon(Icons.Filled.Person, contentDescription = "Profile", tint = p.primary)
+                }
+            }
+
+            Spacer(Modifier.height(36.dp))
+            Logo()
+            Spacer(Modifier.height(16.dp))
+            Text("Sudoku", color = p.text, fontSize = 40.sp, fontWeight = FontWeight.Bold)
+            Text("Solo or head-to-head", color = p.muted, fontSize = 16.sp)
+            Spacer(Modifier.height(44.dp))
+
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                val game = solo.game
+                if (solo.canContinue && game != null) {
+                    PrimaryButton("Continue  ·  ${game.difficulty.label}  ·  ${formatDuration(game.elapsedMs)}", onContinue)
+                    SecondaryButton("New Game", { pickingLevel = true })
+                } else {
+                    PrimaryButton("New Game", { pickingLevel = true })
+                }
+                SecondaryButton("Battle a friend", onBattle)
+            }
         }
+
+        if (solo.generating) {
+            Box(
+                Modifier.fillMaxSize().background(p.background.copy(alpha = 0.85f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    CircularProgressIndicator(color = p.primary)
+                    Text("Creating your puzzle…", color = p.text)
+                }
+            }
+        }
+    }
+
+    if (pickingLevel) {
+        LevelDialog(
+            title = "New game",
+            onDismiss = { pickingLevel = false },
+            onPick = {
+                pickingLevel = false
+                onNewGame(it)
+            },
+        )
     }
 }
 
 @Composable
-private fun codeStyle() = androidx.compose.ui.text.TextStyle(
-    fontFamily = FontFamily.Monospace,
-    fontWeight = FontWeight.Bold,
-    fontSize = 20.sp,
-    letterSpacing = 4.sp,
-    color = Arcade.Text,
-)
+private fun LevelDialog(title: String, onDismiss: () -> Unit, onPick: (Difficulty) -> Unit) {
+    val p = AppTheme.palette
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = p.card,
+        title = { Text(title, color = p.text, fontWeight = FontWeight.Bold) },
+        text = {
+            Column {
+                Difficulty.entries.forEach { level ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                            .clickable { onPick(level) }
+                            .padding(horizontal = 8.dp, vertical = 10.dp),
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(level.label, color = p.text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                            Text(level.tagline(), color = p.muted, fontSize = 13.sp)
+                        }
+                        Text("${level.ordinal + 1}", color = p.primary, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = p.primary) } },
+    )
+}
+
+/** The app mark: a blue tile with a 3x3 grid and two filled cells. */
+@Composable
+private fun Logo() {
+    val p = AppTheme.palette
+    Canvas(Modifier.size(104.dp)) {
+        drawRoundRect(p.primary, size = size, cornerRadius = CornerRadius(26.dp.toPx()))
+        val inset = 22.dp.toPx()
+        val side = size.width - inset * 2
+        val cell = side / 3
+        drawRect(Color.White.copy(alpha = 0.28f), Offset(inset + cell, inset + cell), Size(cell, cell))
+        drawRect(Color.White.copy(alpha = 0.55f), Offset(inset + cell * 2, inset), Size(cell, cell))
+        val stroke = 2.5.dp.toPx()
+        for (i in 0..3) {
+            drawLine(Color.White, Offset(inset + cell * i, inset), Offset(inset + cell * i, inset + side), stroke)
+            drawLine(Color.White, Offset(inset, inset + cell * i), Offset(inset + side, inset + cell * i), stroke)
+        }
+    }
+}

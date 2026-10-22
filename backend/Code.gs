@@ -20,7 +20,9 @@ var ROOM_TTL_SECONDS = 6 * 60 * 60;
 var COUNTDOWN_MS = 5000;
 // A player who stops syncing this long during a match forfeits it.
 var INACTIVE_FORFEIT_MS = 45000;
-var DIFFICULTY_HOLES = { easy: 38, medium: 47, hard: 54 };
+// Empty cells per level. The generator removes cells only while the puzzle keeps a
+// single solution, so the hardest levels may end up with a few cells fewer.
+var DIFFICULTY_HOLES = { beginner: 30, easy: 38, medium: 46, hard: 50, expert: 54, master: 56 };
 var ROOM_PREFIX = 'room_';
 
 function doGet(e) {
@@ -95,8 +97,6 @@ function dispatch_(action, p, now) {
 
 function createRoom_(p, now) {
   var code = normalizeCode_(p.code);
-  var difficulty = String(p.difficulty || 'medium').toLowerCase();
-  if (!DIFFICULTY_HOLES[difficulty]) throw new Error('Unknown difficulty: ' + difficulty);
 
   var existing = loadRoom_(code);
   if (existing && existing.status !== 'closed') {
@@ -107,7 +107,8 @@ function createRoom_(p, now) {
     code: code,
     createdAt: now,
     updatedAt: now,
-    difficulty: difficulty,
+    // Set when a round starts: the level both players agreed on.
+    difficulty: null,
     status: 'waiting',
     round: 0,
     puzzle: null,
@@ -140,6 +141,7 @@ function joinRoom_(p, now) {
 
   room.players.guest = newPlayer_(p.name);
   room.players.host.ready = false;
+  room.players.host.difficulty = null;
   room.status = 'lobby';
   saveRoom_(room, now);
   var view = view_(room, 'guest', now);
@@ -157,8 +159,20 @@ function setReady_(p, now) {
   if (!room.players.guest) throw new Error('Waiting for an opponent to join.');
   if (room.players[otherRole_(role)].left) throw new Error('Your opponent has left the battle.');
 
-  room.players[role].ready = String(p.ready) !== 'false';
-  if (room.players.host.ready && room.players.guest.ready) {
+  var me = room.players[role];
+  if (String(p.ready) === 'false') {
+    me.ready = false;
+    me.difficulty = null;
+  } else {
+    var difficulty = String(p.difficulty || '').toLowerCase();
+    if (!DIFFICULTY_HOLES[difficulty]) throw new Error('Choose a difficulty level.');
+    me.ready = true;
+    me.difficulty = difficulty;
+  }
+  // A round starts only when both players are ready with the same level.
+  var host = room.players.host;
+  var guest = room.players.guest;
+  if (host.ready && guest.ready && host.difficulty === guest.difficulty) {
     startRound_(room, now);
   }
   saveRoom_(room, now);
@@ -213,6 +227,7 @@ function leave_(p, now) {
     room.players.guest = null;
     room.status = 'waiting';
     room.players.host.ready = false;
+    room.players.host.difficulty = null;
   }
   saveRoom_(room, now);
   return { left: true };
@@ -227,6 +242,7 @@ function newPlayer_(name) {
     id: Utilities.getUuid(),
     name: cleanName_(name),
     ready: false,
+    difficulty: null,
     board: null,
     progress: 0,
     finishedAt: null,
@@ -244,6 +260,7 @@ function endMatch_(room, winnerRole, reason) {
 }
 
 function startRound_(room, now) {
+  room.difficulty = room.players.host.difficulty;
   var generated = generatePuzzle_(DIFFICULTY_HOLES[room.difficulty]);
   room.puzzle = generated.puzzle;
   room.solution = generated.solution;
@@ -255,6 +272,7 @@ function startRound_(room, now) {
   ['host', 'guest'].forEach(function (r) {
     var pl = room.players[r];
     pl.ready = false;
+    pl.difficulty = null;
     pl.board = room.puzzle;
     pl.progress = 0;
     pl.finishedAt = null;
@@ -263,7 +281,10 @@ function startRound_(room, now) {
 
 function resetReady_(room) {
   ['host', 'guest'].forEach(function (r) {
-    if (room.players[r]) room.players[r].ready = false;
+    if (room.players[r]) {
+      room.players[r].ready = false;
+      room.players[r].difficulty = null;
+    }
   });
 }
 
@@ -295,6 +316,8 @@ function playerView_(player, room, includeProgress) {
   return {
     name: player.name,
     ready: player.ready,
+    // The level this player is ready for (null until they choose one).
+    difficulty: player.difficulty,
     // A player never gets their own server-side progress during a match,
     // otherwise it would reveal whether a guess was correct.
     progress: includeProgress ? player.progress : null,

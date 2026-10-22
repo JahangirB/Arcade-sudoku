@@ -53,16 +53,16 @@ function isValidSolution(grid) {
 }
 
 function startedBattle(b, difficulty = 'easy') {
-  const host = b.call({ action: 'create', code: 'abc123', name: 'Alice', difficulty });
+  const host = b.call({ action: 'create', code: 'abc123', name: 'Alice' });
   const guest = b.call({ action: 'join', code: 'ABC123', name: 'Bob' });
-  b.call({ action: 'ready', code: 'ABC123', playerId: host.playerId });
-  const started = b.call({ action: 'ready', code: 'ABC123', playerId: guest.playerId });
+  b.call({ action: 'ready', code: 'ABC123', playerId: host.playerId, difficulty });
+  const started = b.call({ action: 'ready', code: 'ABC123', playerId: guest.playerId, difficulty });
   return { host, guest, started };
 }
 
 test('generated puzzles have a valid, unique solution', () => {
   const { context } = loadBackend();
-  for (const holes of [38, 47, 54]) {
+  for (const holes of [30, 46, 54, 56]) {
     const { puzzle, solution } = context.generatePuzzle_(holes);
     assert.match(puzzle, /^[0-9]{81}$/);
     assert.ok(isValidSolution(solution), 'solution is a valid sudoku');
@@ -72,7 +72,7 @@ test('generated puzzles have a valid, unique solution', () => {
     const grid = puzzle.split('').map(Number);
     assert.equal(context.countSolutions_(grid, 2), 1, 'puzzle has exactly one solution');
     const empty = puzzle.split('').filter((c) => c === '0').length;
-    assert.ok(empty >= Math.min(holes, 45), `enough empty cells (${empty})`);
+    assert.ok(empty >= holes - 4, `enough empty cells (${empty})`);
   }
 });
 
@@ -85,7 +85,7 @@ test('ping works without a room', () => {
 
 test('host creates, guest joins, both ready, same puzzle and synced start', () => {
   const b = loadBackend();
-  const host = b.call({ action: 'create', code: 'abc-123', name: 'Alice', difficulty: 'easy' });
+  const host = b.call({ action: 'create', code: 'abc-123', name: 'Alice' });
   assert.equal(host.ok, true);
   assert.equal(host.code, 'ABC123');
   assert.equal(host.status, 'waiting');
@@ -100,12 +100,17 @@ test('host creates, guest joins, both ready, same puzzle and synced start', () =
   const third = b.call({ action: 'join', code: 'ABC123', name: 'Eve' });
   assert.equal(third.ok, false);
 
-  const r1 = b.call({ action: 'ready', code: 'ABC123', playerId: host.playerId });
+  const r1 = b.call({ action: 'ready', code: 'ABC123', playerId: host.playerId, difficulty: 'hard' });
   assert.equal(r1.status, 'lobby');
   assert.equal(r1.me.ready, true);
+  assert.equal(r1.me.difficulty, 'hard');
 
-  const r2 = b.call({ action: 'ready', code: 'ABC123', playerId: guest.playerId });
+  const guestSees = b.call({ action: 'sync', code: 'ABC123', playerId: guest.playerId });
+  assert.equal(guestSees.opponent.difficulty, 'hard', 'the opponent sees the chosen level');
+
+  const r2 = b.call({ action: 'ready', code: 'ABC123', playerId: guest.playerId, difficulty: 'hard' });
   assert.equal(r2.status, 'countdown');
+  assert.equal(r2.difficulty, 'hard');
   assert.equal(r2.startAt, b.clock.now + 5000);
   assert.equal(r2.solution, null);
 
@@ -172,11 +177,12 @@ test('rematch starts a new round once both players are ready again', () => {
   const room = JSON.parse(b.context.CacheService.getScriptCache().get('room_ABC123'));
   b.call({ action: 'sync', code: 'ABC123', playerId: host.playerId, board: room.solution });
 
-  const r1 = b.call({ action: 'ready', code: 'ABC123', playerId: host.playerId });
+  const r1 = b.call({ action: 'ready', code: 'ABC123', playerId: host.playerId, difficulty: 'medium' });
   assert.equal(r1.status, 'finished');
   assert.equal(b.call({ action: 'sync', code: 'ABC123', playerId: guest.playerId }).opponent.ready, true);
-  const r2 = b.call({ action: 'ready', code: 'ABC123', playerId: guest.playerId });
+  const r2 = b.call({ action: 'ready', code: 'ABC123', playerId: guest.playerId, difficulty: 'medium' });
   assert.equal(r2.status, 'countdown');
+  assert.equal(r2.difficulty, 'medium', 'a rematch can use a different level');
   assert.equal(r2.round, 2);
   assert.equal(r2.winner, null);
 });
@@ -191,7 +197,7 @@ test('leaving mid-game forfeits, leaving as host closes the room', () => {
   assert.equal(view.winner, 'me');
   assert.equal(view.endReason, 'forfeit');
   assert.equal(view.opponent.left, true);
-  assert.equal(b.call({ action: 'ready', code: 'ABC123', playerId: host.playerId }).ok, false);
+  assert.equal(b.call({ action: 'ready', code: 'ABC123', playerId: host.playerId, difficulty: 'easy' }).ok, false);
 
   b.call({ action: 'leave', code: 'ABC123', playerId: host.playerId });
   const closed = b.call({ action: 'sync', code: 'ABC123', playerId: host.playerId });
@@ -242,4 +248,53 @@ test('unknown rooms and players are fatal errors', () => {
   b.call({ action: 'create', code: 'REAL1', name: 'A' });
   assert.equal(b.call({ action: 'sync', code: 'REAL1', playerId: 'intruder' }).fatal, true);
   assert.equal(b.call({ action: 'create', code: 'REAL1', name: 'B' }).fatal, false);
+});
+
+test('the round does not start until both players pick the same level', () => {
+  const b = loadBackend();
+  const host = b.call({ action: 'create', code: 'LEVEL1', name: 'A' });
+  const guest = b.call({ action: 'join', code: 'LEVEL1', name: 'B' });
+
+  b.call({ action: 'ready', code: 'LEVEL1', playerId: host.playerId, difficulty: 'hard' });
+  const mismatch = b.call({ action: 'ready', code: 'LEVEL1', playerId: guest.playerId, difficulty: 'easy' });
+  assert.equal(mismatch.status, 'lobby', 'different levels keep the lobby open');
+  assert.equal(mismatch.me.difficulty, 'easy');
+  assert.equal(mismatch.opponent.difficulty, 'hard');
+  assert.equal(mismatch.puzzle, null);
+
+  // Switching to the host's level starts the round.
+  const match = b.call({ action: 'ready', code: 'LEVEL1', playerId: guest.playerId, difficulty: 'hard' });
+  assert.equal(match.status, 'countdown');
+  assert.equal(match.difficulty, 'hard');
+  const empty = match.puzzle.split('').filter((c) => c === '0').length;
+  assert.ok(empty >= 46, `hard puzzle has many empty cells (${empty})`);
+});
+
+test('a player can cancel being ready and must choose a valid level', () => {
+  const b = loadBackend();
+  const host = b.call({ action: 'create', code: 'LEVEL2', name: 'A' });
+  const guest = b.call({ action: 'join', code: 'LEVEL2', name: 'B' });
+
+  assert.equal(b.call({ action: 'ready', code: 'LEVEL2', playerId: host.playerId }).ok, false, 'level is required');
+  assert.equal(b.call({ action: 'ready', code: 'LEVEL2', playerId: host.playerId, difficulty: 'nightmare' }).ok, false);
+
+  b.call({ action: 'ready', code: 'LEVEL2', playerId: host.playerId, difficulty: 'easy' });
+  const cancelled = b.call({ action: 'ready', code: 'LEVEL2', playerId: host.playerId, ready: 'false' });
+  assert.equal(cancelled.me.ready, false);
+  assert.equal(cancelled.me.difficulty, null);
+
+  const guestReady = b.call({ action: 'ready', code: 'LEVEL2', playerId: guest.playerId, difficulty: 'easy' });
+  assert.equal(guestReady.status, 'lobby', 'the host cancelled, so nothing starts');
+});
+
+test('every level generates a puzzle', () => {
+  const b = loadBackend();
+  for (const level of ['beginner', 'easy', 'medium', 'hard', 'expert', 'master']) {
+    const host = b.call({ action: 'create', code: `LV${level}`.slice(0, 12), name: 'A' });
+    const guest = b.call({ action: 'join', code: `LV${level}`.slice(0, 12), name: 'B' });
+    b.call({ action: 'ready', code: `LV${level}`.slice(0, 12), playerId: host.playerId, difficulty: level });
+    const res = b.call({ action: 'ready', code: `LV${level}`.slice(0, 12), playerId: guest.playerId, difficulty: level });
+    assert.equal(res.difficulty, level);
+    assert.match(res.puzzle, /^[0-9]{81}$/);
+  }
 });

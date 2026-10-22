@@ -2,7 +2,9 @@ package com.arcade.sudoku.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Scaffold
@@ -21,44 +23,85 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.arcade.sudoku.data.RoomStatus
+import com.arcade.sudoku.ui.screens.BattleMenuScreen
 import com.arcade.sudoku.ui.screens.GameScreen
 import com.arcade.sudoku.ui.screens.HomeScreen
 import com.arcade.sudoku.ui.screens.LobbyScreen
-import com.arcade.sudoku.ui.theme.Arcade
+import com.arcade.sudoku.ui.screens.ProfileScreen
+import com.arcade.sudoku.ui.screens.SoloScreen
+import com.arcade.sudoku.ui.theme.AppTheme
+
+private enum class Dest { HOME, PROFILE, BATTLE, SOLO }
 
 @Composable
-fun ArcadeSudokuApp(vm: BattleViewModel = viewModel()) {
-    val state by vm.state.collectAsStateWithLifecycle()
+fun ArcadeSudokuApp(
+    app: AppViewModel = viewModel(),
+    battle: BattleViewModel = viewModel(),
+    solo: SoloViewModel = viewModel(),
+) {
+    val p = AppTheme.palette
+    val profile by app.profile.collectAsStateWithLifecycle()
+    val battleState by battle.state.collectAsStateWithLifecycle()
+    val soloState by solo.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
+    var dest by rememberSaveable { mutableStateOf(Dest.HOME) }
     var confirmLeave by rememberSaveable { mutableStateOf(false) }
 
-    LaunchedEffect(state.message) {
-        state.message?.let {
+    LaunchedEffect(battleState.message) {
+        battleState.message?.let {
             snackbar.showSnackbar(it)
-            vm.dismissMessage()
+            battle.dismissMessage()
         }
     }
 
-    val room = state.room
+    val room = battleState.room
     val requestLeave: () -> Unit = {
         // Leaving a match forfeits it and a host leaving closes the room, so ask first.
         if (room?.status == RoomStatus.FINISHED) {
-            vm.leave()
+            battle.leave()
         } else {
             confirmLeave = true
         }
     }
     BackHandler(enabled = room != null, onBack = requestLeave)
+    BackHandler(enabled = room == null && dest != Dest.HOME) {
+        if (dest == Dest.SOLO) solo.pause()
+        dest = Dest.HOME
+    }
 
     Scaffold(
-        containerColor = Arcade.Background,
+        containerColor = p.background,
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
-            when (room?.status) {
-                null -> HomeScreen(state, vm)
-                RoomStatus.WAITING, RoomStatus.LOBBY -> LobbyScreen(state, vm, onLeave = requestLeave)
-                else -> GameScreen(state, vm, onLeave = requestLeave)
+        // The IME insets shrink every screen above the keyboard, so a focused field stays visible.
+        Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
+            when {
+                room != null && (room.status == RoomStatus.WAITING || room.status == RoomStatus.LOBBY) ->
+                    LobbyScreen(room, profile, battleState.busy, battle, onLeave = requestLeave)
+                room != null -> GameScreen(battleState, battle, onLeave = requestLeave)
+                dest == Dest.SOLO -> SoloScreen(soloState, solo, onHome = { dest = Dest.HOME })
+                dest == Dest.PROFILE -> ProfileScreen(profile, battleState.busy, app, battle, onBack = { dest = Dest.HOME })
+                dest == Dest.BATTLE -> BattleMenuScreen(
+                    state = battleState,
+                    profile = profile,
+                    vm = battle,
+                    onProfile = { dest = Dest.PROFILE },
+                    onBack = { dest = Dest.HOME },
+                )
+                else -> HomeScreen(
+                    solo = soloState,
+                    profile = profile,
+                    onContinue = {
+                        solo.resume()
+                        dest = Dest.SOLO
+                    },
+                    onNewGame = {
+                        solo.startNew(it)
+                        dest = Dest.SOLO
+                    },
+                    onBattle = { dest = Dest.BATTLE },
+                    onProfile = { dest = Dest.PROFILE },
+                )
             }
         }
     }
@@ -67,23 +110,25 @@ fun ArcadeSudokuApp(vm: BattleViewModel = viewModel()) {
         val inMatch = room.status == RoomStatus.COUNTDOWN || room.status == RoomStatus.PLAYING
         AlertDialog(
             onDismissRequest = { confirmLeave = false },
-            title = { Text("Leave the battle?") },
+            containerColor = p.card,
+            title = { Text("Leave the battle?", color = p.text) },
             text = {
                 Text(
                     when {
                         inMatch -> "Leaving now counts as a loss."
                         room.isHost -> "Your opponent will be disconnected."
                         else -> "You can join again with the same secret code."
-                    }
+                    },
+                    color = p.muted,
                 )
             },
             confirmButton = {
                 TextButton(onClick = {
                     confirmLeave = false
-                    vm.leave()
-                }) { Text("Leave") }
+                    battle.leave()
+                }) { Text("Leave", color = p.bad) }
             },
-            dismissButton = { TextButton(onClick = { confirmLeave = false }) { Text("Stay") } },
+            dismissButton = { TextButton(onClick = { confirmLeave = false }) { Text("Stay", color = p.primary) } },
         )
     }
 }
