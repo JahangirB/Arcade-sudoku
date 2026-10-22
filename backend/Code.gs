@@ -27,6 +27,10 @@ var LAST_SEEN_WRITE_MS = 10000;
 // single solution, so the hardest levels may end up with a few cells fewer.
 var DIFFICULTY_HOLES = { beginner: 30, easy: 38, medium: 46, hard: 50, expert: 54, master: 56 };
 var ROOM_PREFIX = 'room_';
+// Avatar and reaction keys the app can show; anything else is ignored. Must match the app.
+var AVATARS = ['fox', 'cat', 'dog', 'panda', 'owl', 'frog', 'tiger', 'unicorn', 'robot', 'alien', 'ninja', 'wizard'];
+var EMOJIS = ['thumbsup', 'clap', 'fire', 'laugh', 'wow', 'sweat', 'think', 'cool', 'heart', 'hurry'];
+var EMOJI_INTERVAL_MS = 1500;
 
 function doGet(e) {
   return respond_(handleRequest_((e && e.parameter) || {}));
@@ -98,6 +102,7 @@ function dispatch_(action, p, now) {
     case 'join': return joinRoom_(p, now);
     case 'ready': return setReady_(p, now);
     case 'leave': return leave_(p, now);
+    case 'emoji': return emoji_(p, now);
     default: throw new Error('Unknown action: ' + action);
   }
 }
@@ -129,7 +134,8 @@ function createRoom_(p, now) {
     startAt: null,
     winner: null,
     endReason: null,
-    players: { host: newPlayer_(p.name), guest: null }
+    emojiSeq: 0,
+    players: { host: newPlayer_(p.name, p.avatar), guest: null }
   };
   saveRoom_(room, now);
   var view = view_(room, 'host', now);
@@ -152,7 +158,7 @@ function joinRoom_(p, now) {
     throw new Error('This battle already has two players.');
   }
 
-  room.players.guest = newPlayer_(p.name);
+  room.players.guest = newPlayer_(p.name, p.avatar);
   room.players.host.ready = false;
   room.players.host.difficulty = null;
   room.status = 'lobby';
@@ -267,6 +273,23 @@ function syncReply_(room, role, p, now) {
   return view_(room, role, now);
 }
 
+/** Shows a predefined reaction to the opponent on their next sync. */
+function emoji_(p, now) {
+  var room = requireRoom_(p.code);
+  var role = requireRole_(room, p.playerId);
+  var emoji = String(p.emoji || '');
+  if (EMOJIS.indexOf(emoji) < 0) throw new Error('Unknown reaction.');
+  if (!room.players[otherRole_(role)]) throw new Error('Nobody to send it to yet.');
+  var player = room.players[role];
+  if (now - (player.emojiAt || 0) < EMOJI_INTERVAL_MS) throw new Error('Slow down a little.');
+  room.emojiSeq = (room.emojiSeq || 0) + 1;
+  player.emoji = { key: emoji, seq: room.emojiSeq };
+  player.emojiAt = now;
+  player.lastSeen = now;
+  saveRoom_(room, now);
+  return view_(room, role, now);
+}
+
 function leave_(p, now) {
   var room = loadRoom_(normalizeCode_(p.code));
   if (!room) return { left: true };
@@ -298,10 +321,13 @@ function leave_(p, now) {
 // Room helpers
 // ---------------------------------------------------------------------------
 
-function newPlayer_(name) {
+function newPlayer_(name, avatar) {
   return {
     id: Utilities.getUuid(),
     name: cleanName_(name),
+    avatar: AVATARS.indexOf(avatar) >= 0 ? avatar : null,
+    emoji: null,
+    emojiAt: 0,
     ready: false,
     difficulty: null,
     board: null,
@@ -377,6 +403,9 @@ function view_(room, role, now) {
 function playerView_(player, room, includeProgress) {
   return {
     name: player.name,
+    avatar: player.avatar || null,
+    // Latest reaction; the app shows it when seq goes up.
+    emoji: player.emoji || null,
     ready: player.ready,
     // The level this player is ready for (null until they choose one).
     difficulty: player.difficulty,

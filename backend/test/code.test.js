@@ -345,3 +345,22 @@ test('"last seen" is refreshed every 10 seconds without changing the version', (
   assert.equal(b.locks.count, locksBefore + 1, 'a stale last-seen time is written');
   assert.equal(later.unchanged, true, 'but the room did not visibly change');
 });
+
+test('avatars and reactions reach the opponent', () => {
+  const b = loadBackend();
+  const host = b.call({ action: 'create', code: 'EMO123', name: 'A', avatar: 'fox' });
+  assert.equal(host.me.avatar, 'fox');
+  const guest = b.call({ action: 'join', code: 'EMO123', name: 'B', avatar: 'not-an-avatar' });
+  assert.equal(guest.me.avatar, null);
+  assert.equal(guest.opponent.avatar, 'fox');
+
+  const sent = b.call({ action: 'emoji', code: 'EMO123', playerId: host.playerId, emoji: 'fire' });
+  assert.equal(sent.me.emoji.key, 'fire');
+  const seen = b.call({ action: 'sync', code: 'EMO123', playerId: guest.playerId, v: guest.version });
+  assert.deepEqual(seen.opponent.emoji, { key: 'fire', seq: 1 });
+
+  assert.equal(b.call({ action: 'emoji', code: 'EMO123', playerId: host.playerId, emoji: 'clap' }).ok, false, 'rate limited');
+  b.clock.now += 2000;
+  assert.equal(b.call({ action: 'emoji', code: 'EMO123', playerId: host.playerId, emoji: 'clap' }).me.emoji.seq, 2);
+  assert.equal(b.call({ action: 'emoji', code: 'EMO123', playerId: guest.playerId, emoji: 'bomb' }).ok, false, 'unknown');
+});
